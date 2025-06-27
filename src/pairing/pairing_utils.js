@@ -1,9 +1,6 @@
 function toEvenHex(val) {
-	let hex =
-		typeof val === "string"
-			? val.replace(/^0x/i, "")
-			: val.toString(16).toUpperCase();
-	if (hex.length % 2) hex = "0" + hex;
+	let hex = typeof val === 'string' ? val.replace(/^0x/i, '') : val.toString(16).toUpperCase();
+	if (hex.length % 2) hex = '0' + hex;
 	return hex.toUpperCase();
 }
 

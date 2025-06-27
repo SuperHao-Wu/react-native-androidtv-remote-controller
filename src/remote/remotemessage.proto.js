@@ -1,4 +1,3 @@
-
 export default `
 // remotemessage.proto
 syntax = "proto3";
