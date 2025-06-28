@@ -37,21 +37,23 @@ class PairingManager extends EventEmitter {
       `;
       
           await RNFS.writeFile(logFile, logContent, 'utf8');
-          console.debug(`Certificates logged to: ${logFile}`);
+          console.log(`Certificates logged to: ${logFile}`);
       
           // Log the full path for debugging
-          console.debug('Document Directory:', RNFS.DocumentDirectoryPath);
+          console.log('Document Directory:', RNFS.DocumentDirectoryPath);
         } catch (error) {
           console.error('Error writing certificate logs:', error);
         }
       }*/
 
 	async sendCode(pin) {
-		console.debug('Sending code : ', pin);
+		console.log('Sending code : ', pin);
 		debugger;
 
 		let client_cert = await this.client.getCertificate();
 		let server_cert = await this.client.getPeerCertificate();
+		console.log('client_cert:', client_cert);
+		console.log('server_cert:', server_cert);
 		let client_certificate = get_modulus_exponent(client_cert);
 		let server_certificate = get_modulus_exponent(server_cert);
 		//await this.logCertificates(client_certificate, server_certificate);
@@ -73,7 +75,7 @@ class PairingManager extends EventEmitter {
 			this.client.destroy(new Error('Bad Code'));
 			return false;
 		} else {
-			console.debug('Code validated, sending pairing secret');
+			console.log('Code validated, sending pairing secret');
 			this.client.write(this.pairingMessageManager.createPairingSecret(hash_array));
 			return true;
 		}
@@ -99,16 +101,16 @@ class PairingManager extends EventEmitter {
 				keyAlias: this.certs.keyAlias,
 			};
 
-			//console.debug('PairingManager.start(): before connectTLS');
+			//console.log('PairingManager.start(): before connectTLS');
 			this.client = TcpSockets.connectTLS(options, () => {
-				console.debug(this.host + ' Pairing connected');
+				console.log(this.host + ' Pairing connected');
 			});
 
 			this.isCancelled = false;
 			this.client.pairingManager = this;
 
 			this.client.on('secureConnect', () => {
-				console.debug(this.host + ' Pairing secure connected ');
+				console.log(this.host + ' Pairing secure connected ');
 				this.client.write(this.pairingMessageManager.createPairingRequest(this.service_name));
 			});
 
@@ -119,8 +121,8 @@ class PairingManager extends EventEmitter {
 				if (this.chunks.length > 0 && this.chunks.readInt8(0) === this.chunks.length - 1) {
 					let message = this.pairingMessageManager.parse(this.chunks);
 
-					console.debug('Receive : ' + Array.from(this.chunks));
-					console.debug('Receive : ' + JSON.stringify(message.toJSON()));
+					console.log('Receive : ' + Array.from(this.chunks));
+					console.log('Receive : ' + JSON.stringify(message.toJSON()));
 
 					if (message.status !== this.pairingMessageManager.Status.STATUS_OK) {
 						this.client.destroy(new Error(message.status));
@@ -132,10 +134,10 @@ class PairingManager extends EventEmitter {
 						} else if (message.pairingConfigurationAck) {
 							this.emit('secret');
 						} else if (message.pairingSecretAck) {
-							console.debug(this.host + ' Paired!');
+							console.log(this.host + ' Paired!');
 							this.client.destroy();
 						} else {
-							console.debug(this.host + ' What Else ?');
+							console.log(this.host + ' What Else ?');
 						}
 					}
 					this.chunks = Buffer.from([]);

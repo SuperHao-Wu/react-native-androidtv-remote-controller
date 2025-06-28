@@ -27,7 +27,7 @@ class PairingMessageManager {
 	}
 
 	createPairingRequest(service_name) {
-		console.log('PairingMessageManager.createPairingRequest');
+		console.log('send createPairingRequest');
 		return this.create({
 			pairingRequest: {
 				serviceName: service_name,
@@ -39,7 +39,7 @@ class PairingMessageManager {
 	}
 
 	createPairingOption() {
-		console.log('PairingMessageManager.createPairingOption');
+		console.log('send createPairingOption');
 		return this.create({
 			pairingOption: {
 				preferredRole: this.RoleType.ROLE_TYPE_INPUT,
@@ -56,6 +56,7 @@ class PairingMessageManager {
 	}
 
 	createPairingConfiguration() {
+		console.log('send createPairingConfiguration');
 		return this.create({
 			pairingConfiguration: {
 				clientRole: this.RoleType.ROLE_TYPE_INPUT,
@@ -70,6 +71,7 @@ class PairingMessageManager {
 	}
 
 	createPairingSecret(secret) {
+		console.log('send createPairingSecret');
 		return this.create({
 			pairingSecret: {
 				secret: secret,
