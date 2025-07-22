@@ -42,7 +42,8 @@
     "babel-plugin-transform-import-meta": "^2.1.0",
     "core-js": "^3.44.0",
     "jest": "^30.0.4",
-    "react-native-modpow": "^1.1.0"
+    "react-native-modpow": "^1.1.0",
+    "selfsigned": "^3.0.0"
   },
   "type": "commonjs",
   "homepage": "https://github.com/vricosti/react-native-androidtv-remote",
