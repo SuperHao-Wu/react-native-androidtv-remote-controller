@@ -19,7 +19,6 @@ exports.config = {
 			'appium:platformVersion': '18.5',
 			'appium:automationName': 'XCUITest',
 			'appium:bundleId': 'com.haoandroidtv.example',
-			'appium:realDevice': true,
 			'appium:noReset': false,
 			'appium:newCommandTimeout': 300,
 			'appium:showXcodeLog': true,
