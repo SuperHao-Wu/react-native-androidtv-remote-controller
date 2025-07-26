@@ -1,7 +1,7 @@
 // __tests__/MockServer.js
-import tls from "tls";
-import selfsigned from "selfsigned";
-import { PairingMessageManager } from "../src/pairing/PairingMessageManager";
+const tls = require("tls");
+const selfsigned = require("selfsigned");
+const { PairingMessageManager } = require("../dist/pairing/PairingMessageManager");
 
 // Create a self-signed certificate for testing
 const createTestCerts = () => {
@@ -42,7 +42,7 @@ const createTestCerts = () => {
 	return { cert: pems.cert, key: pems.private };
 };
 
-export function startMockTLSServer({ 
+function startMockTLSServer({ 
 	port, 
 	onConnect, 
 	onSecureConnect, 
@@ -155,3 +155,5 @@ export function startMockTLSServer({
 		server.on("error", reject);
 	});
 }
+
+module.exports = { startMockTLSServer };
