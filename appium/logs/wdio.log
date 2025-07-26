@@ -1,6 +1,0 @@
-2025-07-23T15:16:54.765Z WARN @wdio/config:ConfigParser: pattern ./appium/tests/sonyTvPairingNative.test.js did not match any file
-2025-07-23T15:16:54.784Z INFO @wdio/cli:launcher: Run onPrepare hook
-2025-07-23T15:16:54.785Z WARN @wdio/config:ConfigParser: pattern ./appium/tests/sonyTvPairingNative.test.js did not match any file
-2025-07-23T15:16:54.785Z ERROR @wdio/cli:launcher: No specs found to run, exiting with failure
-2025-07-23T15:16:54.806Z INFO @wdio/local-runner: Shutting down spawned worker
-2025-07-23T15:16:55.058Z INFO @wdio/local-runner: Waiting for 0 to shut down gracefully
