@@ -1,3 +1,5 @@
+const path = require('path');
+
 exports.config = {
 	runner: 'local',
 
@@ -5,10 +7,7 @@ exports.config = {
 	port: 4723,
 	path: '/',
 
-	specs: [
-		'/Users/wuhao/my_projects/sony_tv_controller/react-native-androidtv-remote/appium/tests/deviceConnection.test.js',
-		'/Users/wuhao/my_projects/sony_tv_controller/react-native-androidtv-remote/appium/tests/sonyTvPairingNative.test.js',
-	],
+	specs: [path.resolve(__dirname, './tests/**/*.test.js')],
 
 	maxInstances: 1,
 
@@ -44,7 +43,7 @@ exports.config = {
 	mochaOpts: {
 		ui: 'bdd',
 		timeout: 60000,
-		require: ['/Users/wuhao/my_projects/sony_tv_controller/react-native-androidtv-remote/appium/tests/setup.js'],
+		require: [path.resolve(__dirname, './tests/setup.js')],
 	},
 
 	before: function (capabilities, specs) {
