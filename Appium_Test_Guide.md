@@ -126,12 +126,6 @@ npx wdio run ./appium/wdio.conf.js
 
 ## Test Configurations
 
-### Main Configuration (`appium/wdio.conf.js`)
-
-- **Purpose**: Full test suite for connection stability debugging
-- **Tests**: TCP socket lifecycle, memory stability, rapid connections
-- **Target**: Real device connection issues simulation
-
 ### Simple Configuration (`appium/wdio.simple.conf.js`)
 
 - **Purpose**: Basic connectivity verification
@@ -321,6 +315,258 @@ afterTest: async function(test, context, { error }) {
 const appState = await driver.queryAppState(bundleId);
 expect(appState).to.equal(4); // 4 = running in foreground
 ```
+
+## Debugging Setup
+
+This section covers how to debug both JavaScript code (VS Code) and native Objective-C code (Xcode) for the `react-native-tcp-socket` library that handles Sony TV connections.
+
+### JavaScript Debugging with VS Code
+
+The project includes VS Code debugging configurations that use **attach mode** rather than launching from the IDE. This approach is more flexible and realistic.
+
+#### Available Debug Configurations
+
+1. **Attach to Jest Tests** - Debug unit tests
+2. **Attach to Appium/WDIO Tests** - Debug Appium test suite
+3. **Attach to React Native Metro** - Debug Metro bundler
+4. **Attach to Mock Server** - Debug mock TLS server
+
+#### How to Debug JavaScript Code
+
+**Similar to Python's `debugpy --wait-for-client` behavior - the process waits for debugger attachment before starting:**
+
+1. **Start your process in debug wait mode:**
+
+```bash
+# Debug Jest tests (waits for debugger)
+yarn test:debug
+
+# Debug Appium tests (waits for debugger)  
+yarn appium:debug
+
+# Debug mock server (waits for debugger)
+yarn mock:debug
+```
+
+The process will show:
+```
+Debugger listening on ws://127.0.0.1:9230/...
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+```
+
+And **wait** for you to attach the debugger before executing any code.
+
+2. **Attach VS Code debugger to trigger execution:**
+
+   - Open VS Code
+   - Go to Run and Debug (Ctrl+Shift+D)
+   - Select appropriate configuration:
+     - "Attach to Jest Tests" (port 9229)
+     - "Attach to Appium/WDIO Tests" (port 9230)
+     - "Attach to Mock Server" (port 9231)
+   - Press **F5** - This triggers the start of the debugging session (like Python)
+
+3. **Execution flow:**
+   - Process starts and waits for debugger
+   - You set breakpoints in VS Code
+   - Press F5 to attach debugger
+   - **Code execution begins** only after debugger attachment
+   - Breakpoints will be hit from the very beginning
+
+3. **Set breakpoints:**
+   - In your JavaScript source files (src/ directory)
+   - In test files (**tests**/ or appium/tests/)
+   - In mock server code (**tests**/MockServer.js)
+
+#### Key Files to Debug
+
+- **PairingManager.js** - TLS handshake and PIN validation logic
+- **RemoteManager.js** - Connection lifecycle and cleanup
+- **MockServer.js** - Mock Sony TV server responses
+- **sonyTvPairingNative.test.js** - End-to-end test scenarios
+
+### Native iOS Debugging with Xcode
+
+Debug the `react-native-tcp-socket` Objective-C code that handles TLS connections, certificate validation, and socket management.
+
+#### Setup Xcode for Debugging
+
+1. **Open the iOS project:**
+
+```bash
+cd example/ios
+open TestAndroidTVRemoteApp.xcworkspace
+```
+
+2. **Locate react-native-tcp-socket source:**
+   - In Xcode project navigator
+   - Expand "Pods" → "react-native-tcp-socket"
+   - Key files to debug:
+     - `TcpSocketClient.h/.m` - Main socket implementation
+     - `TcpSockets.h/.m` - React Native bridge module
+
+#### Key Native Code Areas
+
+**TcpSocketClient.m contains:**
+
+- TLS/SSL certificate handling (Security framework)
+- Socket connection lifecycle
+- Error handling and cleanup
+- Certificate validation logic
+
+**Common breakpoint locations:**
+
+```objc
+// Certificate handling
+- (void)connectTLS:(NSDictionary *)options;
+
+// Connection callbacks
+- (void)socket:(GCDAsyncSocket *)sock didConnectToHost:(NSString *)host port:(uint16_t)port;
+
+// TLS handshake
+- (void)socket:(GCDAsyncSocket *)sock didReceiveTrust:(SecTrustRef)trust;
+
+// Error handling
+- (void)socket:(GCDAsyncSocket *)sock didDisconnectWithError:(NSError *)err;
+```
+
+#### Debug Process for Connection Issues
+
+1. **Start Appium test normally:**
+
+```bash
+yarn appium:start  # Terminal 1
+yarn appium:test   # Terminal 2
+```
+
+2. **Attach Xcode debugger:**
+
+   - In Xcode: Debug → Attach to Process by PID or Name
+   - Select your app: "TestAndroidTVRemoteApp"
+   - Or attach by device: iPhone → TestAndroidTVRemoteApp
+
+3. **Set breakpoints in native code:**
+
+   - TLS connection establishment
+   - Certificate validation
+   - Socket disconnection/cleanup
+   - Error callbacks
+
+4. **Trigger the issue:**
+   - Run your Appium test that reproduces the problem
+   - The native debugger will pause at breakpoints
+   - Inspect variables, call stack, and step through code
+
+#### Advanced Debugging Techniques
+
+**1. Symbolic Breakpoints:**
+Set breakpoints on Objective-C method names:
+
+```
+-[TcpSocketClient connectTLS:]
+-[GCDAsyncSocket connectToHost:onPort:error:]
+```
+
+**2. Exception Breakpoints:**
+
+- Add Exception Breakpoint in Xcode
+- Catches all Objective-C exceptions
+- Useful for TLS/certificate errors
+
+**3. Network Debugging:**
+Enable network logging in Xcode console:
+
+```bash
+# Set environment variable in Xcode scheme
+CFNETWORK_DIAGNOSTICS=3
+```
+
+**4. Certificate Chain Inspection:**
+Add breakpoints in Security framework calls:
+
+```objc
+SecTrustEvaluate()
+SecCertificateCreateWithData()
+SecPolicyCreateSSL()
+```
+
+#### Debugging Your Specific Sony TV Issues
+
+**Issue: `secureConnect` callback not triggered**
+
+- Set breakpoint in `didReceiveTrust:` method
+- Check if TLS handshake completes
+- Inspect certificate validation results
+
+**Issue: Multiple connections not cleaned up**
+
+- Set breakpoint in `didDisconnectWithError:`
+- Check if cleanup code is called
+- Monitor socket state transitions
+
+**Issue: TV blocking after multiple attempts**
+
+- Monitor connection attempt frequency
+- Check socket reuse vs. creation
+- Inspect error codes and retry logic
+
+### Debugging Workflow Example
+
+**Complete debugging session for connection stability (Python debugpy-like workflow):**
+
+#### **Single Test Focus (Recommended for debugging)**
+
+1. **Terminal 1:** Start Appium server
+```bash
+yarn appium:start
+```
+
+2. **Terminal 2:** Start specific test in debug wait mode
+```bash
+yarn appium:debug-spec appium/tests/sonyTvPairingNative.test.js
+```
+Output shows:
+```
+Debugger listening on ws://127.0.0.1:9230/...
+For help, see: https://nodejs.org/en/docs/inspector
+```
+**Process waits here - no execution yet**
+
+3. **Xcode:** Configure for wait-and-attach
+   - Open: `cd example/ios && open TestAndroidTVRemoteApp.xcworkspace`
+   - Edit Scheme → Run → Info → Check "Wait for the executable to be launched" 
+   - Set breakpoints in `TcpSocketClient.m`:
+     ```objc
+     - (void)connectTLS:(NSDictionary *)options  // TLS start
+     - (void)didReceiveTrust:(SecTrustRef)trust  // Certificate validation  
+     - (void)didDisconnectWithError:(NSError *)err  // Cleanup issues
+     ```
+   - Press ⌘R (Run) - **Xcode waits for app launch**
+
+4. **VS Code:** Set breakpoints and trigger execution
+   - Set breakpoints in `PairingManager.js`, test files, etc.
+   - Go to Run and Debug (Ctrl+Shift+D)
+   - Select "Attach to Appium/WDIO Tests"
+   - Press **F5** - This starts the test execution
+
+5. **Dual debugging session begins:**
+   - **VS Code** attachment triggers test execution
+   - **Test launches React Native app**
+   - **Xcode automatically attaches** when app starts
+   - **Both debuggers active** - step through JS → Native code flow
+   - Debug the exact path: JavaScript → react-native-tcp-socket → iOS system calls
+
+#### **Auto-Discovery Mode (All tests)**
+
+```bash
+# Run all tests with auto-discovery
+yarn appium:debug  # Runs all *.test.js files in appium/tests/
+```
+
+This workflow ensures you **never miss early execution** and get **complete visibility** into both JavaScript and native code - just like Python's `debugpy --wait-for-client` behavior!
+
+This dual-debugging approach gives you complete visibility into the connection lifecycle and helps identify where the stability issues occur.
 
 ## Troubleshooting
 
