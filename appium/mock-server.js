@@ -22,16 +22,16 @@ class MockServerManager {
         responseDelay: 100,
         enablePairingFlow: true,
         onConnect: (socket) => {
-          console.log('🖥️  [6467] Pairing server: Connection from', socket.remoteAddress);
+          console.log(`🖥️  [6467] ${new Date().toISOString()} Pairing server: Connection from`, socket.remoteAddress);
         },
         onSecureConnect: (socket) => {
-          console.log('🔐 [6467] Pairing server: Secure connection established');
+          console.log(`🔐 [6467] ${new Date().toISOString()} Pairing server: Secure connection established`);
         },
         onData: (socket, data) => {
-          console.log('📨 [6467] Pairing server: Received', data.length, 'bytes');
+          console.log(`📨 [6467] ${new Date().toISOString()} Pairing server: Received`, data.length, 'bytes');
         },
         onClose: (socket) => {
-          console.log('🚪 [6467] Pairing server: Connection closed');
+          console.log(`🚪 [6467] ${new Date().toISOString()} Pairing server: Connection closed`);
         }
       });
 
@@ -41,16 +41,16 @@ class MockServerManager {
         responseDelay: 100,
         enablePairingFlow: false,
         onConnect: (socket) => {
-          console.log('🖥️  [6466] Remote server: Connection from', socket.remoteAddress);
+          console.log(`🖥️  [6466] ${new Date().toISOString()} Remote server: Connection from`, socket.remoteAddress);
         },
         onSecureConnect: (socket) => {
-          console.log('🔐 [6466] Remote server: Secure connection established');
+          console.log(`🔐 [6466] ${new Date().toISOString()} Remote server: Secure connection established`);
         },
         onData: (socket, data) => {
-          console.log('📨 [6466] Remote server: Received', data.length, 'bytes');
+          console.log(`📨 [6466] ${new Date().toISOString()} Remote server: Received`, data.length, 'bytes');
         },
         onClose: (socket) => {
-          console.log('🚪 [6466] Remote server: Connection closed');
+          console.log(`🚪 [6466] ${new Date().toISOString()} Remote server: Connection closed`);
         }
       });
 
