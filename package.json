@@ -13,7 +13,6 @@
 		"test:debug": "node --inspect-brk=9229 node_modules/.bin/jest --runInBand --no-cache",
 		"appium:test": "npx wdio run ./appium/wdio.simple.conf.js",
 		"appium:debug": "node --inspect-brk=9230 node_modules/.bin/wdio run ./appium/wdio.simple.conf.js",
-		"appium:debug-spec": "node --inspect-brk=9230 node_modules/.bin/wdio run ./appium/wdio.simple.conf.js --spec",
 		"appium:start": "appium server --address localhost --port 4723 --relaxed-security --allow-cors",
 		"mock:start": "node appium/mock-server.js",
 		"mock:debug": "node --inspect-brk=9231 appium/mock-server.js",
