@@ -46,9 +46,20 @@ function App(): React.JSX.Element {
 
     try {
       const results = await discoveryRef.current.scan();
-      setDevices(results.devices);
-      if (results.devices.length > 0) {
-        setSelectedDevice(results.devices[0].host || '');
+      
+      // Always add mock device for testing - use Mac's IP since app runs on iPhone
+      const mockDevice: DeviceInfo = {
+        name: 'Mock TV (Testing)',
+        host: '192.168.2.150',  // Mac's IP address where mock server runs
+        port: 6467  // Must match pairing_port in AndroidRemote options (pairing happens first)
+      };
+      
+      const allDevices = [mockDevice, ...results.devices];
+      setDevices(allDevices);
+      
+      if (allDevices.length > 0) {
+        // Default to mock device for testing
+        setSelectedDevice(allDevices[0].host || '');
       }
     } catch (error) {
       Alert.alert('Scan Error', 'Failed to discover devices');
@@ -163,7 +174,7 @@ function App(): React.JSX.Element {
     <SafeAreaView style={styles.container}>
       <Text style={styles.statusText}>Status: {connectionStatuses[selectedDevice] || 'Disconnected'}</Text>
 
-      <Button title="Search Devices" onPress={handleScan} />
+      <Button title="Search Devices" onPress={handleScan} testID="searchDevicesButton" />
 
       <View style={styles.pickerContainer}>
         <Picker
@@ -171,6 +182,7 @@ function App(): React.JSX.Element {
           onValueChange={(itemValue) => setSelectedDevice(itemValue)}
           style={styles.picker}
           enabled={!scanning && devices.length > 0}
+          testID="devicePicker"
         >
           {devices.length === 0 ? (
             <Picker.Item label="No devices found" value="" />
@@ -186,6 +198,7 @@ function App(): React.JSX.Element {
         title={connectionStatuses[selectedDevice] === 'Connected' ? 'Disconnect' : 'Connect'}
         onPress={handleConnect}
         disabled={!selectedDevice || connectionStatuses[selectedDevice] === 'Pairing Needed'}
+        testID="connectButton"
       />
 
       <View style={styles.buttonSpacer} />

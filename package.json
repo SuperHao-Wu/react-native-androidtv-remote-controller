@@ -15,9 +15,9 @@
 		"appium:debug": "node --inspect-brk=9230 node_modules/.bin/wdio run ./appium/wdio.simple.conf.js",
 		"appium:debug-spec": "node --inspect-brk=9230 node_modules/.bin/wdio run ./appium/wdio.simple.conf.js --spec",
 		"appium:start": "appium server --address localhost --port 4723 --relaxed-security --allow-cors",
-		"appium:doctor": "appium-doctor --ios",
-		"mock:server": "node __tests__/MockServer.js",
-		"mock:debug": "node --inspect-brk=9231 __tests__/MockServer.js"
+		"mock:start": "node appium/mock-server.js",
+		"mock:debug": "node --inspect-brk=9231 appium/mock-server.js",
+		"appium:doctor": "appium-doctor --ios"
 	},
 	"keywords": [
 		"androidtv",
