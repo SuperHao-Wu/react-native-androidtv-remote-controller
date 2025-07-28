@@ -35,6 +35,8 @@ We use **Appium + Mock Servers** to:
 - **Node.js**: Version 14.18.1 or higher
 - **Xcode**: Latest version with Command Line Tools
 - **iOS Development Certificate**: To sign the test app
+- **Appium**: Version 2.19.0 or higher
+- **WebDriverAgent**: Built and installed automatically by Appium
 
 ### 3. Device Setup
 
@@ -56,11 +58,67 @@ npm install -g appium@2.19.0
 # Install iOS driver
 appium driver install xcuitest
 
-# install Carthage
+# Install Carthage (required for WebDriverAgent)
 brew install carthage
 ```
 
-### 2. Verify Appium Setup
+### 3. WebDriverAgent Setup
+
+WebDriverAgent is automatically built and installed by Appium when running tests. However, you may need to configure it for your development team:
+
+#### Automatic Setup (Recommended)
+
+Appium will automatically:
+- Download and build WebDriverAgent
+- Install it on your connected iPhone
+- Handle code signing using your development certificate
+
+#### Manual Setup (If Automatic Fails)
+
+If you encounter WebDriverAgent code signing issues:
+
+1. **Open WebDriverAgent project in Xcode:**
+
+```bash
+# Find WebDriverAgent location (installed by Appium)
+find ~/.appium -name "WebDriverAgent.xcodeproj" -type d
+
+# Open in Xcode (replace path with actual location)
+open ~/.appium/node_modules/appium-xcuitest-driver/node_modules/appium-webdriveragent/WebDriverAgent.xcodeproj
+```
+
+2. **Configure signing for WebDriverAgentLib and WebDriverAgentRunner:**
+   - Select **WebDriverAgentLib** target
+   - Go to **Signing & Capabilities**
+   - Select your **Development Team**
+   - Choose **Automatically manage signing**
+   - Repeat for **WebDriverAgentRunner** target
+
+3. **Build WebDriverAgent:**
+
+```bash
+# Build for your device (replace with your device UDID)
+xcodebuild -project ~/.appium/.../WebDriverAgent.xcodeproj \
+           -scheme WebDriverAgentRunner \
+           -destination 'platform=iOS,id=YOUR-DEVICE-UDID' \
+           test-without-building
+```
+
+#### WebDriverAgent Verification
+
+After setup, verify WebDriverAgent is working:
+
+```bash
+# This should show WebDriverAgent successfully installed
+yarn appium:doctor
+
+# Expected output includes:
+✔ WebDriverAgent is installed at: ~/.appium/...
+✔ Carthage was found at: /opt/homebrew/bin/carthage
+✔ The iOS Development certificate is installed
+```
+
+### 4. Verify Appium Setup
 
 ```bash
 # Check Appium iOS setup
@@ -78,7 +136,7 @@ yarn appium:doctor
 Diagnostic for necessary dependencies completed, no fix needed.
 ```
 
-### 3. Build and Install Test App
+### 5. Build and Install Test App
 
 ```bash
 # Navigate to example app
@@ -96,7 +154,7 @@ idevice_id -l
 npx react-native run-ios --device $(idevice_id -l)
 ```
 
-### 4. Start Appium Server
+### 6. Start Appium Server
 
 ```bash
 # In project root directory
@@ -108,7 +166,7 @@ yarn appium:start
 npx appium server --address localhost --port 4723 --relaxed-security --allow-cors
 ```
 
-### 5. Run Tests
+### 7. Run Tests
 
 #### Basic Device Connection Test
 
@@ -621,7 +679,38 @@ Error: XCUITest driver not installed
 appium driver install xcuitest
 ```
 
-#### 5. Code Signing Issues
+#### 5. WebDriverAgent Build Issues
+
+```
+Error: Unable to launch WebDriverAgent because of xcodebuild failure
+```
+
+**Solutions**:
+
+1. **Check development certificate:**
+   - Open Xcode Preferences → Accounts
+   - Ensure valid Apple Developer account is signed in
+   - Download development certificates if missing
+
+2. **Manual WebDriverAgent setup:**
+   - Follow the **WebDriverAgent Setup** section above
+   - Configure code signing manually in Xcode
+   - Build WebDriverAgent for your specific device
+
+3. **Clear WebDriverAgent cache:**
+   ```bash
+   # Remove cached WebDriverAgent builds
+   rm -rf ~/.appium/node_modules/appium-xcuitest-driver/node_modules/appium-webdriveragent/build
+   
+   # Force rebuild on next test run
+   yarn appium:test
+   ```
+
+4. **Update bundle identifier conflicts:**
+   - WebDriverAgent may conflict with existing bundle IDs
+   - Change bundle ID in WebDriverAgent project if needed
+
+#### 6. Code Signing Issues
 
 ```
 Error: Could not install app on device
