@@ -63,6 +63,56 @@ Real device testing configuration for iPhone (UDID: 00008101-0010299E1484001E):
 - Tests validate native TCP socket implementation
 - Mock TLS servers simulate Sony TV pairing protocol
 
+## Recent Improvements (Phase 1: Connection Race Condition Fixes)
+
+### Problem Identified
+The library suffered from **TCP connection race conditions** causing intermittent failures:
+- **Fast execution** (normal): Connection attempts failed due to timing issues
+- **Slow execution** (with debugger): Connections succeeded due to natural delays
+- **Sony TV behavior**: Same intermittent pattern - mostly fails, occasionally works by chance
+
+### Root Cause
+The original implementation sent pairing protocol messages **immediately** after connection events without allowing time for:
+1. TCP socket to fully establish
+2. TLS handshake to complete properly  
+3. Network stack to process the connection
+4. Target device (TV) to be ready for data
+
+### Phase 1 Fixes Applied
+
+#### **Enhanced Connection State Management**
+```javascript
+// Added to PairingManager constructor:
+this.connectionState = 'disconnected'; // disconnected, connecting, connected, paired
+this.connectionTimeout = null;
+```
+
+#### **Critical Timing Improvements**
+- **300ms delay** after `secureConnect` before sending pairing request
+- **200ms delays** between each pairing protocol step  
+- **15-second connection timeout** protection
+- Validation checks before sending messages
+
+#### **Robust Error Handling**
+- Proper cleanup of timeouts and connection state
+- Enhanced logging with host identification
+- Graceful handling of cancelled connections
+
+### Key Files Modified
+- **`src/pairing/PairingManager.js`** - Main connection logic with timing fixes
+- **`appium/tests/tcpConnectionDebug.test.js`** - Updated test timeout handling
+- **`appium/mock-server.js`** - Enhanced protocol response handling  
+
+### Testing Results
+- ✅ **Mock server tests**: Now pass consistently without debugger
+- ✅ **Real device testing**: Successful pairing dialog appearance
+- ✅ **Connection stability**: Reduced race condition failures
+- ✅ **Debug compatibility**: Works with both normal and debug execution
+
+### Next Phase Recommendations
+**Phase 2**: Implement retry logic with exponential backoff
+**Phase 3**: Add connection pooling and health checks
+
 ## Development Guidelines
 
 ### Certificate Handling
