@@ -57,7 +57,7 @@ describe('TCP Connection Debug Test - Real Native Socket Usage', function () {
 	});
 
 	it('should trigger real TCP socket connection through React Native app', async function () {
-		// this.timeout(TEST_CONFIG.NETWORK_TIMEOUT);
+		this.timeout(TEST_CONFIG.NETWORK_TIMEOUT);
 
 		console.log('🔌 Testing REAL TCP socket connection through native bridge...');
 
