@@ -72,3 +72,4 @@ yarn-error.log
 # testing
 /coverage
 dist/**
+appium/logs/

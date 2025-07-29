@@ -4,6 +4,7 @@ import { Buffer } from 'buffer';
 import EventEmitter from 'events';
 import TcpSockets from 'react-native-tcp-socket';
 import { get_modulus_exponent } from './pairing_utils.js';
+
 //import RNFS from 'react-native-fs';
 
 class PairingManager extends EventEmitter {
@@ -16,6 +17,9 @@ class PairingManager extends EventEmitter {
 		this.service_name = service_name;
 		this.pairingMessageManager = new PairingMessageManager(systeminfo);
 		this.isCancelled = false;
+		// Phase 1: Add connection state tracking
+		this.connectionState = 'disconnected'; // disconnected, connecting, connected, paired
+		this.connectionTimeout = null;
 	}
 
 	/*
@@ -37,33 +41,32 @@ class PairingManager extends EventEmitter {
       `;
       
           await RNFS.writeFile(logFile, logContent, 'utf8');
-          console.log(`Certificates logged to: ${logFile}`);
+          console.debug(`Certificates logged to: ${logFile}`);
       
           // Log the full path for debugging
-          console.log('Document Directory:', RNFS.DocumentDirectoryPath);
+          console.debug('Document Directory:', RNFS.DocumentDirectoryPath);
         } catch (error) {
           console.error('Error writing certificate logs:', error);
         }
       }*/
 
 	async sendCode(pin) {
-		console.log('Sending code : ', pin);
-		debugger;
+		console.debug('Sending code : ', pin);
 
+		// let client_certificate = await this.client.getCertificate();
+		// let server_certificate = await this.client.getPeerCertificate();
 		let client_cert = await this.client.getCertificate();
 		let server_cert = await this.client.getPeerCertificate();
-		console.log('client_cert:', client_cert);
-		console.log('server_cert:', server_cert);
+		//await this.logCertificates(client_certificate, server_certificate);
 		let client_certificate = get_modulus_exponent(client_cert);
 		let server_certificate = get_modulus_exponent(server_cert);
-		//await this.logCertificates(client_certificate, server_certificate);
 		let sha256 = forge.md.sha256.create();
 
 		sha256.update(forge.util.hexToBytes(client_certificate.modulus), 'raw');
 		sha256.update(forge.util.hexToBytes(client_certificate.exponent), 'raw');
 		sha256.update(forge.util.hexToBytes(server_certificate.modulus), 'raw');
 		sha256.update(forge.util.hexToBytes(server_certificate.exponent), 'raw');
-		sha256.update(forge.util.hexToBytes(pin.slice(2)), 'raw'); // Last 4 digits
+		sha256.update(forge.util.hexToBytes(pin.slice(2)), 'raw');
 
 		let hash = sha256.digest().getBytes();
 		let hash_array = Array.from(hash, c => c.charCodeAt(0) & 0xff);
@@ -75,7 +78,7 @@ class PairingManager extends EventEmitter {
 			this.client.destroy(new Error('Bad Code'));
 			return false;
 		} else {
-			console.log('Code validated, sending pairing secret');
+			console.debug('Code validated, sending pairing secret');
 			this.client.write(this.pairingMessageManager.createPairingSecret(hash_array));
 			return true;
 		}
@@ -83,12 +86,33 @@ class PairingManager extends EventEmitter {
 
 	cancelPairing() {
 		this.isCancelled = true;
+		this.connectionState = 'disconnected';
+		// Clear any pending timeouts
+		if (this.connectionTimeout) {
+			clearTimeout(this.connectionTimeout);
+			this.connectionTimeout = null;
+		}
 		this.client.destroy(new Error('Pairing canceled'));
 		return false;
 	}
 
+	// Phase 1: Add utility method for delays
+	sleep(ms) {
+		return new Promise(resolve => setTimeout(resolve, ms));
+	}
+
 	async start() {
 		return new Promise((resolve, reject) => {
+			// Phase 1: Add connection timeout protection
+			this.connectionTimeout = setTimeout(() => {
+				console.error(`${this.host} Pairing connection timeout after 15 seconds`);
+				this.connectionState = 'disconnected';
+				if (this.client) {
+					this.client.destroy(new Error('Connection timeout'));
+				}
+				reject(new Error('Connection timeout'));
+			}, 15000); // 15 second timeout
+
 			let options = {
 				port: this.port,
 				host: this.host,
@@ -101,43 +125,86 @@ class PairingManager extends EventEmitter {
 				keyAlias: this.certs.keyAlias,
 			};
 
-			//console.log('PairingManager.start(): before connectTLS');
+			console.debug(`${this.host} PairingManager.start(): initiating connection`);
+			this.connectionState = 'connecting';
+
+			debugger;
 			this.client = TcpSockets.connectTLS(options, () => {
-				console.log(this.host + ' Pairing connected');
+				debugger;
+				console.debug(this.host + ' Pairing TCP connected');
+				// Don't change state here - wait for secureConnect
 			});
 
 			this.isCancelled = false;
 			this.client.pairingManager = this;
 
-			this.client.on('secureConnect', () => {
-				console.log(this.host + ' Pairing secure connected ');
+			this.client.on('secureConnect', async () => {
+				debugger;
+				console.debug(this.host + ' Pairing secure connected');
+				this.connectionState = 'connected';
+
+				// Phase 1: Add delay before sending pairing request to avoid race condition
+				console.debug(`${this.host} Waiting 300ms before sending pairing request...`);
+				await this.sleep(300);
+
+				// Check if connection is still valid and not cancelled
+				if (this.isCancelled || this.connectionState !== 'connected') {
+					console.debug(`${this.host} Connection cancelled or invalid, aborting pairing request`);
+					return;
+				}
+
+				console.debug(`${this.host} Sending pairing request`);
 				this.client.write(this.pairingMessageManager.createPairingRequest(this.service_name));
 			});
 
 			this.client.on('data', data => {
+				debugger;
 				let buffer = Buffer.from(data);
 				this.chunks = Buffer.concat([this.chunks, buffer]);
 
 				if (this.chunks.length > 0 && this.chunks.readInt8(0) === this.chunks.length - 1) {
 					let message = this.pairingMessageManager.parse(this.chunks);
 
-					console.log('Receive : ' + Array.from(this.chunks));
-					console.log('Receive : ' + JSON.stringify(message.toJSON()));
+					console.debug('Receive : ' + Array.from(this.chunks));
+					console.debug('Receive : ' + JSON.stringify(message.toJSON()));
 
 					if (message.status !== this.pairingMessageManager.Status.STATUS_OK) {
 						this.client.destroy(new Error(message.status));
 					} else {
+						// Phase 1: Add delays between pairing protocol steps
 						if (message.pairingRequestAck) {
-							this.client.write(this.pairingMessageManager.createPairingOption());
+							console.debug(
+								`${this.host} Received pairingRequestAck, waiting 200ms before sending pairingOption`,
+							);
+							setTimeout(() => {
+								if (!this.isCancelled && this.connectionState === 'connected') {
+									this.client.write(this.pairingMessageManager.createPairingOption());
+								}
+							}, 200);
 						} else if (message.pairingOption) {
-							this.client.write(this.pairingMessageManager.createPairingConfiguration());
+							console.debug(
+								`${this.host} Received pairingOption, waiting 200ms before sending pairingConfiguration`,
+							);
+							setTimeout(() => {
+								if (!this.isCancelled && this.connectionState === 'connected') {
+									this.client.write(this.pairingMessageManager.createPairingConfiguration());
+								}
+							}, 200);
 						} else if (message.pairingConfigurationAck) {
+							console.debug(`${this.host} Received pairingConfigurationAck, emitting secret event`);
+							this.connectionState = 'paired';
 							this.emit('secret');
 						} else if (message.pairingSecretAck) {
-							console.log(this.host + ' Paired!');
+							console.debug(this.host + ' Paired!');
+							this.connectionState = 'paired';
+							// Clear timeout since we're successfully paired
+							if (this.connectionTimeout) {
+								clearTimeout(this.connectionTimeout);
+								this.connectionTimeout = null;
+							}
 							this.client.destroy();
 						} else {
-							console.log(this.host + ' What Else ?');
+							console.debug(this.host + ' What Else ?');
 						}
 					}
 					this.chunks = Buffer.from([]);
@@ -145,21 +212,35 @@ class PairingManager extends EventEmitter {
 			});
 
 			this.client.on('close', hasError => {
+				debugger;
+				// Phase 1: Clean up connection state and timeout
+				this.connectionState = 'disconnected';
+				if (this.connectionTimeout) {
+					clearTimeout(this.connectionTimeout);
+					this.connectionTimeout = null;
+				}
+
 				if (hasError) {
-					console.log('PairingManager.close() failure');
+					console.log(`${this.host} PairingManager.close() failure`);
 					reject(false);
 				} else if (this.isCancelled) {
-					console.log('PairingManager.close() on cancelPairing()');
+					console.log(`${this.host} PairingManager.close() on cancelPairing()`);
 					this.isCancelled = false;
 					reject(false);
 				} else {
-					console.log('PairingManager.close() success');
+					console.log(`${this.host} PairingManager.close() success`);
 					resolve(true);
 				}
 			});
 
 			this.client.on('error', error => {
-				console.error(error);
+				console.error(`${this.host} PairingManager error:`, error);
+				// Phase 1: Update connection state on error
+				this.connectionState = 'disconnected';
+				if (this.connectionTimeout) {
+					clearTimeout(this.connectionTimeout);
+					this.connectionTimeout = null;
+				}
 			});
 		});
 	}

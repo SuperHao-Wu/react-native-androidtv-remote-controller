@@ -13,11 +13,48 @@
 		},
 		{
 			"type": "node",
-			"request": "launch",
-			"name": "Debug TypeScript (ts-node)",
-			"program": "${workspaceFolder}/dist/index.js",
-			// "preLaunchTask": "tsc: build - tsconfig.json",
-			"outFiles": ["${workspaceFolder}/**/*.js"]
+			"request": "attach",
+			"name": "Attach to Jest Tests",
+			"port": 9229,
+			"address": "localhost",
+			"localRoot": "${workspaceFolder}",
+			"remoteRoot": null,
+			"skipFiles": ["<node_internals>/**"],
+			"sourceMaps": true,
+			"trace": true
+		},
+		{
+			"type": "node",
+			"request": "attach",
+			"name": "Attach to Appium/WDIO Tests",
+			"port": 9230,
+			"address": "localhost",
+			"localRoot": "${workspaceFolder}",
+			"remoteRoot": null,
+			"skipFiles": ["<node_internals>/**"],
+			"sourceMaps": true,
+			"trace": true
+		},
+		{
+			"type": "node",
+			"request": "attach",
+			"name": "Attach to React Native Metro",
+			"port": 8081,
+			"address": "localhost",
+			"localRoot": "${workspaceFolder}",
+			"remoteRoot": null,
+			"skipFiles": ["<node_internals>/**"]
+		},
+		{
+			"type": "node",
+			"request": "attach",
+			"name": "Attach to Mock Server",
+			"port": 9231,
+			"address": "localhost",
+			"localRoot": "${workspaceFolder}",
+			"remoteRoot": null,
+			"skipFiles": ["<node_internals>/**"],
+			"sourceMaps": true
 		}
 	]
 }

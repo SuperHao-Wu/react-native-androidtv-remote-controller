@@ -1,90 +1,89 @@
-import protobufjs from 'protobufjs';
-import pairingMessageProto from './pairingmessage.proto.js';
+import protobufjs from "protobufjs";
+import pairingMessageProto from "./pairingmessage.proto.js";
 
 class PairingMessageManager {
-	constructor(systeminfo = {}) {
-		console.log('PairingMessageManager.constructor');
-		systeminfo = systeminfo || {};
+    constructor(systeminfo = {}){
 
-		this.root = protobufjs.parse(pairingMessageProto).root;
-		this.PairingMessage = this.root.lookupType('pairing.PairingMessage');
-		this.Status = this.root.lookupEnum('pairing.PairingMessage.Status').values;
-		this.RoleType = this.root.lookupEnum('RoleType').values;
-		this.EncodingType = this.root.lookupEnum('pairing.PairingEncoding.EncodingType').values;
+        console.log('PairingMessageManager.constructor');
+        systeminfo = systeminfo || {};
 
-		this.manufacturer = systeminfo.manufacturer || 'defaultManufacturer';
-		this.model = systeminfo.model || 'defaultModel';
-	}
+        this.root = protobufjs.parse(pairingMessageProto).root;
+        this.PairingMessage = this.root.lookupType("pairing.PairingMessage");
+        this.Status = this.root.lookupEnum("pairing.PairingMessage.Status").values;
+        this.RoleType = this.root.lookupEnum("RoleType").values;
+        this.EncodingType = this.root.lookupEnum("pairing.PairingEncoding.EncodingType").values;
 
-	create(payload) {
-		console.log('PairingMessageManager.create');
-		let errMsg = this.PairingMessage.verify(payload);
-		if (errMsg) throw Error(errMsg);
+        this.manufacturer = systeminfo.manufacturer || 'defaultManufacturer';
+        this.model = systeminfo.model || 'defaultModel';
+    }
 
-		let message = this.PairingMessage.create(payload);
+    create(payload){
+        console.log('PairingMessageManager.create');
+        let errMsg = this.PairingMessage.verify(payload);
+        if (errMsg)
+            throw Error(errMsg);
 
-		return this.PairingMessage.encodeDelimited(message).finish();
-	}
+        let message = this.PairingMessage.create(payload);
 
-	createPairingRequest(service_name) {
-		console.log('send createPairingRequest');
-		return this.create({
-			pairingRequest: {
-				serviceName: service_name,
-				clientName: this.model,
-			},
-			status: this.Status.STATUS_OK,
-			protocolVersion: 2,
-		});
-	}
+        return this.PairingMessage.encodeDelimited(message).finish();
+    }
 
-	createPairingOption() {
-		console.log('send createPairingOption');
-		return this.create({
-			pairingOption: {
-				preferredRole: this.RoleType.ROLE_TYPE_INPUT,
-				inputEncodings: [
-					{
-						type: this.EncodingType.ENCODING_TYPE_HEXADECIMAL,
-						symbolLength: 6,
-					},
-				],
-			},
-			status: this.Status.STATUS_OK,
-			protocolVersion: 2,
-		});
-	}
+    createPairingRequest(service_name){
+        console.log('PairingMessageManager.createPairingRequest');
+        return this.create({
+            pairingRequest: {
+                serviceName: service_name,
+                clientName: this.model,
+            },
+            status: this.Status.STATUS_OK,
+            protocolVersion: 2
+        });
+    }
 
-	createPairingConfiguration() {
-		console.log('send createPairingConfiguration');
-		return this.create({
-			pairingConfiguration: {
-				clientRole: this.RoleType.ROLE_TYPE_INPUT,
-				encoding: {
-					type: this.EncodingType.ENCODING_TYPE_HEXADECIMAL,
-					symbolLength: 6,
-				},
-			},
-			status: this.Status.STATUS_OK,
-			protocolVersion: 2,
-		});
-	}
+    createPairingOption(){
+        console.log('PairingMessageManager.createPairingOption');
+        return this.create({
+            pairingOption: {
+                preferredRole : this.RoleType.ROLE_TYPE_INPUT,
+                inputEncodings : [{
+                    type : this.EncodingType.ENCODING_TYPE_HEXADECIMAL,
+                    symbolLength : 6
+                }]
+            },
+            status: this.Status.STATUS_OK,
+            protocolVersion: 2
+        });
+    }
 
-	createPairingSecret(secret) {
-		console.log('send createPairingSecret');
-		return this.create({
-			pairingSecret: {
-				secret: secret,
-			},
-			status: this.Status.STATUS_OK,
-			protocolVersion: 2,
-		});
-	}
+    createPairingConfiguration(){
+        return this.create({
+            pairingConfiguration: {
+                clientRole : this.RoleType.ROLE_TYPE_INPUT,
+                encoding : {
+                    type : this.EncodingType.ENCODING_TYPE_HEXADECIMAL,
+                    symbolLength : 6
+                }
+            },
+            status: this.Status.STATUS_OK,
+            protocolVersion: 2
+        });
+    }
 
-	parse(buffer) {
-		console.log('PairingMessageManager.parse');
-		return this.PairingMessage.decodeDelimited(buffer);
-	}
+    createPairingSecret(secret){
+        return this.create({
+            pairingSecret: {
+                secret : secret
+            },
+            status: this.Status.STATUS_OK,
+            protocolVersion: 2
+        });
+    }
+
+    parse(buffer){
+        console.log('PairingMessageManager.parse');
+        return this.PairingMessage.decodeDelimited(buffer);
+    }
+
 }
 
 export { PairingMessageManager };
