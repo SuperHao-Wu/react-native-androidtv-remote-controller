@@ -145,13 +145,32 @@ describe('TCP Connection Debug Test - Real Native Socket Usage', function () {
 
 					await connectButton.click();
 
-					// Wait for TCP connection and initial pairing steps
-					console.log('⏳ Waiting for AndroidRemote library to connect and start pairing...');
-					await driver.pause(3000); // Wait for initial connection
+					// CRITICAL: Extended wait for React Native bridge timing
+					// The JS->Native bridge needs time to invoke the native TCP socket code
+					console.log('⏳ Waiting for React Native bridge and native TCP socket initialization...');
+					await driver.pause(8000); // Increased to 8 seconds for bridge timing
+					
+					// Additional check: Verify app status changed (indicates native code started)
+					const afterClickPageSource = await driver.getPageSource();
+					const afterStatus = afterClickPageSource.match(/Status: (\w+)/)?.[1] || 'Unknown';
+					console.log('📱 Status after bridge wait:', afterStatus);
+					
+					if (beforeStatus === afterStatus) {
+						console.log('⚠️  App status unchanged - bridge might need more time');
+						await driver.pause(3000); // Additional bridge wait
+					}
 
-					// Check if pairing protocol steps occurred
-					const pairingRequestReceived = await waitForPairingStep('pairingRequest', 5000);
+					// Check if pairing protocol steps occurred with retry logic
+					let pairingRequestReceived = await waitForPairingStep('pairingRequest', 8000); // Increased timeout
 					console.log('📋 Pairing request received by mock server:', pairingRequestReceived);
+
+					// If no pairing request yet, wait a bit more and try again
+					if (!pairingRequestReceived) {
+						console.log('⏳ No pairing request yet, waiting additional 3 seconds...');
+						await driver.pause(3000);
+						pairingRequestReceived = await waitForPairingStep('pairingRequest', 5000);
+						console.log('📋 Pairing request received after retry:', pairingRequestReceived);
+					}
 
 					if (pairingRequestReceived) {
 						// Wait for configuration step which should trigger pairing dialog
@@ -167,9 +186,9 @@ describe('TCP Connection Debug Test - Real Native Socket Usage', function () {
 
 					// Check status after clicking
 					const afterPageSource = await driver.getPageSource();
-					const afterStatus = afterPageSource.match(/Status: (\w+)/)?.[1] || 'Unknown';
-					console.log('📱 Status after click:', afterStatus);
-					console.log('📱 Status changed:', beforeStatus !== afterStatus);
+					const finalStatus = afterPageSource.match(/Status: (\w+)/)?.[1] || 'Unknown';
+					console.log('📱 Status after click:', finalStatus);
+					console.log('📱 Status changed:', beforeStatus !== finalStatus);
 					console.log('📱 Connection attempt completed');
 				} else {
 					console.log('⚠️  Connect button is disabled - no device selected properly');
@@ -245,10 +264,11 @@ describe('TCP Connection Debug Test - Real Native Socket Usage', function () {
 		const tcpProtocolSuccess =
 			pairingFlowResult.pairingState && pairingFlowResult.pairingState.pairingRequestReceived;
 
-		const appUISuccess = hasPairingDialog || hasPairingStatus || hasConnectedStatus;
+		// App UI success: Must show pairing dialog specifically (not just any status)
+		const appUISuccess = hasPairingDialog || hasPairingStatus;
 
-		// Combined success: TCP protocol started OR app shows appropriate response
-		const connectionSuccess = tcpProtocolSuccess || appUISuccess;
+		// Combined success: BOTH TCP protocol AND app UI response required
+		const connectionSuccess = tcpProtocolSuccess && appUISuccess;
 
 		// Result for our test
 		const connectionResult = {
@@ -262,17 +282,19 @@ describe('TCP Connection Debug Test - Real Native Socket Usage', function () {
 			appShowsUnpaired: hasUnpairedStatus,
 			appShowsError: hasErrorStatus,
 			message: connectionSuccess
-				? 'SUCCESS: TCP protocol communication and app response verified!'
-				: tcpProtocolSuccess
-				? 'PARTIAL: TCP protocol worked but app UI did not respond as expected'
-				: 'FAILED: No TCP protocol communication detected',
+				? 'SUCCESS: TCP protocol communication and pairing dialog verified!'
+				: tcpProtocolSuccess && !appUISuccess
+				? 'PARTIAL: TCP protocol worked but pairing dialog did not appear'
+				: !tcpProtocolSuccess && appUISuccess
+				? 'PARTIAL: Pairing dialog appeared but no TCP protocol communication'
+				: 'FAILED: No TCP protocol communication and no pairing dialog',
 		};
 
 		console.log('📱 Connection result:', connectionResult);
 
 		if (connectionSuccess) {
 			console.log(
-				'✅ SUCCESS: AndroidRemote library successfully established TCP protocol communication!',
+				'✅ SUCCESS: AndroidRemote library successfully established TCP protocol communication AND pairing dialog appeared!',
 			);
 			console.log(
 				'📋 TCP protocol steps completed:',
@@ -280,14 +302,14 @@ describe('TCP Connection Debug Test - Real Native Socket Usage', function () {
 					k => pairingFlowResult.details[k] === true,
 				),
 			);
-			console.log('📱 App shows appropriate response to pairing flow');
+			console.log('📱 App shows pairing dialog or pairing needed status');
 			console.log(
 				'🔍 Check your Xcode breakpoints in TcpSocketClient.m - they should have been hit!',
 			);
 			console.log('🖥️  Check mock server logs for detailed protocol messages');
-		} else if (tcpProtocolSuccess) {
+		} else if (tcpProtocolSuccess && !appUISuccess) {
 			console.log(
-				'⚠️  PARTIAL SUCCESS: TCP protocol communication worked but app UI response is missing',
+				'❌ PARTIAL FAILURE: TCP protocol communication worked but PAIRING DIALOG DID NOT APPEAR',
 			);
 			console.log(
 				'📋 TCP protocol steps completed:',
@@ -296,12 +318,20 @@ describe('TCP Connection Debug Test - Real Native Socket Usage', function () {
 				),
 			);
 			console.log(
-				'❓ App should show pairing dialog or status change - check AndroidRemote event handling',
+				'❓ App should show pairing dialog - check TLS readiness validation or AndroidRemote event handling',
 			);
-		} else {
-			console.log('❌ FAILED: No TCP protocol communication detected');
+			console.log('🔧 This might be due to our new TLS readiness check timing out or failing');
+		} else if (!tcpProtocolSuccess && appUISuccess) {
+			console.log(
+				'❌ PARTIAL FAILURE: Pairing dialog appeared but NO TCP protocol communication detected',
+			);
 			console.log('🔍 Check if AndroidRemote library is actually calling TcpSocket.connectTLS()');
 			console.log('🔍 Check network connectivity between iPhone and Mac (192.168.2.150:6467)');
+		} else {
+			console.log('❌ COMPLETE FAILURE: No TCP protocol communication AND no pairing dialog');
+			console.log('🔍 Check if AndroidRemote library is actually calling TcpSocket.connectTLS()');
+			console.log('🔍 Check network connectivity between iPhone and Mac (192.168.2.150:6467)');
+			console.log('🔧 Check TLS readiness validation implementation');
 		}
 
 		// Test succeeds only if BOTH TCP protocol AND app response work

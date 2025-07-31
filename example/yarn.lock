@@ -5636,10 +5636,8 @@ react-native-modpow@^1.1.0:
   resolved "https://registry.yarnpkg.com/react-native-modpow/-/react-native-modpow-1.1.0.tgz#14867fc678daeb74ce678df15a8abc5955115e5c"
   integrity sha512-pEXAecjrp06UG2B1gy+yNuU7laoe7gjMWT63bfsH/V9lIHrwQLqQKTz073AgJsWWVBArVVC0wRI2jjqiTCf61w==
 
-react-native-tcp-socket@^6.3.0:
+"react-native-tcp-socket@file:../react-native-tcp-socket":
   version "6.3.0"
-  resolved "https://registry.yarnpkg.com/react-native-tcp-socket/-/react-native-tcp-socket-6.3.0.tgz#fc2b02cc10c31978080257b56253cf0bf7d10346"
-  integrity sha512-NthR04myL5IGL4q+2oCjmAx7OMqEgcjUJk8RExAwNjK/164upCP7Pn2Msno5ZTGd3wL6HuEG8d7T2d8f22N+0A==
   dependencies:
     buffer "^5.4.3"
     eventemitter3 "^4.0.7"
