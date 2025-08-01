@@ -26,7 +26,7 @@ function App(): React.JSX.Element {
   const androidRemotesRef = useRef<Map<string, AndroidRemote>>(new Map());
   const discoveryRef = useRef<GoogleCastDiscovery | null>(null);
   const certificateRef = useRef<Map<string, { key: string | null; cert: string | null }>>(new Map());
-
+  // search devices
   useEffect(() => {
     console.log('useEffect({}, []');
     discoveryRef.current = new GoogleCastDiscovery();
@@ -158,6 +158,19 @@ function App(): React.JSX.Element {
       return;
     }
 
+    // Clean up any existing connection for this device
+    const existingRemote = androidRemotesRef.current.get(selectedDevice);
+    if (existingRemote) {
+      console.log('🧹 Cleaning up existing AndroidRemote connection...');
+      try {
+        existingRemote.stop();
+        existingRemote.removeAllListeners();
+      } catch (error) {
+        console.log('⚠️ Error during cleanup:', error);
+      }
+      androidRemotesRef.current.delete(selectedDevice);
+    }
+
     // Set connecting state immediately
     setConnectionStatuses((prev) => ({ ...prev, [selectedDevice]: 'Connecting' }));
 
@@ -238,7 +251,24 @@ function App(): React.JSX.Element {
         Alert.alert("Unpaired", `The device ${selectedDevice} has been unpaired`);
       });
 
-      console.log('� Starting AndroidRemote connection...');
+      // Add error handling for runtime errors
+      androidRemote.on('error', (error: any) => {
+        console.log('AndroidRemote: error event received:', error);
+        setConnectionStatuses((prev) => ({ ...prev, [selectedDevice]: 'Error' }));
+        
+        // Clean up the failed connection
+        try {
+          androidRemote.stop();
+          androidRemote.removeAllListeners();
+        } catch (cleanupError) {
+          console.log('⚠️ Error during runtime cleanup:', cleanupError);
+        }
+        androidRemotesRef.current.delete(selectedDevice);
+        
+        Alert.alert("Runtime Error", `Connection error: ${error.message || error}`);
+      });
+
+      console.log('🚀 Starting AndroidRemote connection...');
       
       // Promise-based connection with proper error handling
       await androidRemote.start();
@@ -251,10 +281,15 @@ function App(): React.JSX.Element {
       setConnectionStatuses((prev) => ({ ...prev, [selectedDevice]: 'Error' }));
       Alert.alert("Connection Error", `Failed to connect: ${error.message}`);
       
-      // Clean up on error
+      // Clean up on error - thorough cleanup
       const remote = androidRemotesRef.current.get(selectedDevice);
       if (remote) {
-        remote.stop();
+        try {
+          remote.stop();
+          remote.removeAllListeners();
+        } catch (cleanupError) {
+          console.log('⚠️ Error during error cleanup:', cleanupError);
+        }
         androidRemotesRef.current.delete(selectedDevice);
       }
     }
