@@ -23,6 +23,7 @@ export default class TLSSocket extends Socket {
      */
     constructor(socket, options = {}) {
         super();
+        console.log(`🔧 TLSSocket.constructor: Creating TLS socket for underlying socket ${socket._id}`);
         /** @private */
         this._options = { ...options };
         TLSSocket.resolveAssetIfNeeded(this._options, 'ca');
@@ -33,15 +34,22 @@ export default class TLSSocket extends Socket {
         this._socket = socket;
         // @ts-ignore
         this._setId(this._socket._id);
+        console.log(`🔧 TLSSocket.constructor: TLS socket ${this._id} created, starting TLS`);
         this._startTLS();
-        if (socket.pending || socket.connecting) socket.once('connect', () => this._initialize());
-        else this._initialize();
+        if (socket.pending || socket.connecting) {
+            console.log(`🔧 TLSSocket.constructor: Socket ${this._id} is pending/connecting, waiting for connect event`);
+            socket.once('connect', () => this._initialize());
+        } else {
+            console.log(`🔧 TLSSocket.constructor: Socket ${this._id} already connected, initializing immediately`);
+            this._initialize();
+        }
     }
 
     /**
      * @private
      */
     _initialize() {
+        console.log(`🔧 TLSSocket._initialize: Initializing TLS socket ${this._id}`);
         // Avoid calling twice destroy() if an error occurs
         this._socket._errorListener?.remove();
         this.on('error', (error) => this._socket.emit('error', error));
@@ -63,7 +71,9 @@ export default class TLSSocket extends Socket {
      * @private
      */
     _startTLS() {
+        console.log(`🔧 TLSSocket._startTLS: Starting TLS for socket ${this._id} with options:`, this._options);
         Sockets.startTLS(this._id, this._options);
+        console.log(`🔧 TLSSocket._startTLS: Called native startTLS for socket ${this._id}`);
     }
 
     /**

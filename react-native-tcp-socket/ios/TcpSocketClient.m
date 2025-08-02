@@ -183,8 +183,12 @@ NSString *const RCTTCPErrorDomain = @"RCTTCPErrorDomain";
 }
 
 - (void)startTLS:(NSDictionary *)tlsOptions {
-    if (_tls)
+    NSLog(@"🔧 startTLS: Starting TLS handshake for client %@", _id);
+    if (_tls) {
+        NSLog(@"⚠️ startTLS: TLS already enabled, returning early");
         return;
+    }
+    NSLog(@"🔧 startTLS: Creating TLS settings dictionary");
     NSMutableDictionary *settings = [NSMutableDictionary dictionary];
     _resolvableCaCert = [self getResolvableOption:tlsOptions forKey:@"ca"];
     BOOL checkValidity = (tlsOptions[@"rejectUnauthorized"]
@@ -247,9 +251,11 @@ NSString *const RCTTCPErrorDomain = @"RCTTCPErrorDomain";
         //RCTLogWarn(@"startTLS: Client certificates configured successfully");
     }
 
-    //RCTLogWarn(@"startTLS: Final settings: %@", settings);
+    NSLog(@"🔧 startTLS: Final TLS settings configured: %@", settings);
+    NSLog(@"🔧 startTLS: Setting _tls flag to true and calling [_tcpSocket startTLS]");
     _tls = true;
     [_tcpSocket startTLS:settings];
+    NSLog(@"🔧 startTLS: Called [_tcpSocket startTLS], waiting for socketDidSecure callback");
 }
 
 - (BOOL)isTLSActuallyReady {
@@ -496,8 +502,12 @@ NSString *const RCTTCPErrorDomain = @"RCTTCPErrorDomain";
 }
 
 - (void)socketDidSecure:(GCDAsyncSocket *)sock {
+    NSLog(@"🔐 socketDidSecure: TLS handshake completed successfully for client %@", _id);
+    NSLog(@"🔐 socketDidSecure: Socket isSecure: %d, isConnected: %d", [sock isSecure], [sock isConnected]);
+    
     // Only for TLS
     if (!_clientDelegate) {
+        NSLog(@"❌ socketDidSecure: ERROR - nil clientDelegate for %@", [sock userData]);
         RCTLogWarn(@"socketDidSecure with nil clientDelegate for %@",
                    [sock userData]);
         return;
@@ -505,7 +515,7 @@ NSString *const RCTTCPErrorDomain = @"RCTTCPErrorDomain";
     
     // Set TLS flag BEFORE emitting events to ensure readiness checks work
     _tls = true;
-    NSLog(@"socketDidSecure: _tls flag set to true, socket isSecure: %d", [sock isSecure]);
+    NSLog(@"🔐 socketDidSecure: _tls flag set to true, socket isSecure: %d", [sock isSecure]);
     
     if (_serverId != nil) {
         [_clientDelegate onSecureConnection:self toClient:_serverId];
