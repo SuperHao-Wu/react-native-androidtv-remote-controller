@@ -11,6 +11,8 @@
 		"babel": "babel ./src/*.* --out-dir dist --delete-dir-on-start -D && babel ./src/certificate/*.* --out-dir dist/certificate -D && babel ./src/pairing/*.* --out-dir dist/pairing -D && babel ./src/remote/*.* --out-dir dist/remote -D",
 		"test": "jest",
 		"build:ios": "yarn babel && cd example && yarn install && cd ios && pod install && cd .. && yarn ios --device && cd ..",
+		"debug:native-logs": "idevicesyslog | grep -E \"(TcpSocket|SSL|TLS|secureConnect|certificate|startTLS|socketDidSecure|🔧|🔐)\" | ts '%Y-%m-%d %H:%M:%S' > native-logs_$(date +%Y-%m-%d_%H-%M-%S).txt",
+		"debug:netstat-logs": "while true; do netstat -an | grep 192.168.2.150.6467 | ts '%Y-%m-%d %H:%M:%S'; sleep 1; done > netstat-logs_$(date +%Y-%m-%d_%H-%M-%S).txt",
 		"test:debug": "node --inspect-brk=9229 node_modules/.bin/jest --runInBand --no-cache",
 		"appium:test": "npx wdio run ./appium/wdio.simple.conf.js",
 		"appium:debug": "node --inspect-brk=9230 node_modules/.bin/wdio run ./appium/wdio.simple.conf.js",
