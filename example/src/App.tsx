@@ -319,6 +319,16 @@ function App(): React.JSX.Element {
     } catch (error) {
       console.error('Error during pairing:', error);
       setShowPairingDialog(false);
+      
+      // Clean up failed pairing attempt
+      try {
+        remote.stop();
+        remote.removeAllListeners();
+      } catch (cleanupError) {
+        console.log('⚠️ Error during pairing cleanup:', cleanupError);
+      }
+      androidRemotesRef.current.delete(selectedDevice);
+      setConnectionStatuses((prev) => ({ ...prev, [selectedDevice]: 'Disconnected' }));
     }
   };
 

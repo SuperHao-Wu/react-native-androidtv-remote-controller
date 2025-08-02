@@ -128,10 +128,20 @@ class PairingManager extends EventEmitter {
 			console.debug(`${this.host} PairingManager.start(): initiating connection`);
 			this.connectionState = 'connecting';
 
+			console.debug(`${this.host} 🔧 Creating TLS connection with options:`, {
+				host: options.host,
+				port: options.port,
+				hasKey: !!options.key,
+				hasCert: !!options.cert,
+				androidKeyStore: options.androidKeyStore,
+				certAlias: options.certAlias,
+				keyAlias: options.keyAlias
+			});
+
 			debugger;
 			this.client = TcpSockets.connectTLS(options, () => {
 				debugger;
-				console.debug(this.host + ' Pairing TCP connected');
+				console.debug(`${this.host} 🔌 TCP connection established (waiting for TLS handshake)`);
 				// Don't change state here - wait for secureConnect
 			});
 
@@ -140,8 +150,22 @@ class PairingManager extends EventEmitter {
 
 			this.client.on('secureConnect', async () => {
 				debugger;
-				console.debug(this.host + ' Pairing secure connected');
+				console.debug(`${this.host} 🔐 TLS handshake completed successfully`);
 				this.connectionState = 'connected';
+				
+				// Log TLS connection details
+				try {
+					const clientCert = await this.client.getCertificate();
+					const serverCert = await this.client.getPeerCertificate();
+					console.debug(`${this.host} 📜 TLS certificates exchanged:`, {
+						clientCertValid: !!clientCert,
+						serverCertValid: !!serverCert,
+						clientSubject: clientCert?.subject,
+						serverSubject: serverCert?.subject
+					});
+				} catch (certError) {
+					console.debug(`${this.host} ⚠️ Could not retrieve TLS certificates:`, certError);
+				}
 
 				// Phase 1: Add delay before sending pairing request to avoid race condition
 				console.debug(`${this.host} Waiting 300ms before sending pairing request...`);
@@ -211,8 +235,23 @@ class PairingManager extends EventEmitter {
 				}
 			});
 
+			// Add TLS-specific event handlers
+			this.client.on('connect', () => {
+				console.debug(`${this.host} 🔗 Socket connect event (before TLS)`);
+			});
+
+			this.client.on('timeout', () => {
+				console.debug(`${this.host} ⏰ Socket timeout event`);
+			});
+
+			this.client.on('end', () => {
+				console.debug(`${this.host} 🔚 Socket end event (other side closed)`);
+			});
+
 			this.client.on('close', hasError => {
 				debugger;
+				console.debug(`${this.host} 🚪 Socket close event - hasError: ${hasError}, connectionState: ${this.connectionState}`);
+				
 				// Phase 1: Clean up connection state and timeout
 				this.connectionState = 'disconnected';
 				if (this.connectionTimeout) {
@@ -221,20 +260,27 @@ class PairingManager extends EventEmitter {
 				}
 
 				if (hasError) {
-					console.log(`${this.host} PairingManager.close() failure`);
+					console.log(`${this.host} ❌ PairingManager.close() failure - connection had errors`);
 					reject(false);
 				} else if (this.isCancelled) {
-					console.log(`${this.host} PairingManager.close() on cancelPairing()`);
+					console.log(`${this.host} 🚫 PairingManager.close() on cancelPairing()`);
 					this.isCancelled = false;
 					reject(false);
 				} else {
-					console.log(`${this.host} PairingManager.close() success`);
+					console.log(`${this.host} ✅ PairingManager.close() success - normal closure`);
 					resolve(true);
 				}
 			});
 
 			this.client.on('error', error => {
-				console.error(`${this.host} PairingManager error:`, error);
+				console.error(`${this.host} 💥 PairingManager error:`, {
+					code: error.code,
+					message: error.message,
+					errno: error.errno,
+					syscall: error.syscall,
+					connectionState: this.connectionState
+				});
+				
 				// Phase 1: Update connection state on error
 				this.connectionState = 'disconnected';
 				if (this.connectionTimeout) {
@@ -243,6 +289,39 @@ class PairingManager extends EventEmitter {
 				}
 			});
 		});
+	}
+
+	stop() {
+		console.debug(`${this.host} PairingManager.stop(): Cleaning up connection`);
+		
+		// Update connection state
+		this.connectionState = 'disconnected';
+		this.isCancelled = true;
+		
+		// Clear any pending timeouts
+		if (this.connectionTimeout) {
+			clearTimeout(this.connectionTimeout);
+			this.connectionTimeout = null;
+		}
+		
+		// Close and clean up TCP client socket
+		if (this.client) {
+			try {
+				// Remove all event listeners to prevent memory leaks
+				this.client.removeAllListeners();
+				
+				// Destroy the socket connection
+				this.client.destroy();
+				this.client = null;
+			} catch (error) {
+				console.log(`${this.host} PairingManager.stop(): Error during cleanup:`, error);
+			}
+		}
+		
+		// Reset chunks buffer
+		this.chunks = Buffer.from([]);
+		
+		console.debug(`${this.host} PairingManager.stop(): Cleanup completed`);
 	}
 
 	hexStringToBytes(q) {

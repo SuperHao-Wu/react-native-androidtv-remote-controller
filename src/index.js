@@ -119,6 +119,7 @@ export class AndroidRemote extends EventEmitter {
         // Remove event listeners from pairingManager
         if (this.pairingManager) {
             this.pairingManager.removeAllListeners();
+            this.pairingManager.stop(); // ← Critical: Close TCP socket before nulling
             this.pairingManager = null;
         }
     }

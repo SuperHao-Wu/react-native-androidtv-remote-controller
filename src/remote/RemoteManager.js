@@ -198,8 +198,29 @@ class RemoteManager extends EventEmitter {
     }
 
     stop(){
+        console.debug(`${this.host} RemoteManager.stop(): Cleaning up connection`);
+        
         this.isManualStop = true;
-        this.client.destroy();
+        
+        // Close and clean up TCP client socket
+        if (this.client) {
+            try {
+                // Remove all event listeners to prevent memory leaks
+                this.client.removeAllListeners();
+                
+                // Destroy the socket connection
+                this.client.destroy();
+                this.client = null;
+            } catch (error) {
+                console.log(`${this.host} RemoteManager.stop(): Error during cleanup:`, error);
+            }
+        }
+        
+        // Reset chunks buffer and error state
+        this.chunks = Buffer.from([]);
+        this.error = null;
+        
+        console.debug(`${this.host} RemoteManager.stop(): Cleanup completed`);
     }
 }
 
