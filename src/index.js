@@ -2,6 +2,7 @@ import { CertificateGenerator } from "./certificate/CertificateGenerator.js"
 import { PairingManager } from "./pairing/PairingManager.js"
 import { RemoteManager } from "./remote/RemoteManager.js";
 import { RemoteMessageManager } from "./remote/RemoteMessageManager.js";
+import { GlobalTLSManager } from "./network/index.js";
 import EventEmitter from "events";
 
 export class AndroidRemote extends EventEmitter {
@@ -25,6 +26,11 @@ export class AndroidRemote extends EventEmitter {
         };
         this.remoteManager = null;
         this.pairingManager = null;
+        
+        // Initialize global TLS manager for connection pooling
+        this.tlsManager = GlobalTLSManager.getInstance();
+        this.tlsManager.initialize();
+        console.log('AndroidRemote.constructor: TLS connection pooling initialized');
     }
 
     async start() {
@@ -109,6 +115,8 @@ export class AndroidRemote extends EventEmitter {
     }
 
     stop() {
+        console.log('AndroidRemote.stop(): Cleaning up all resources');
+        
         // Remove event listeners from remoteManager
         if (this.remoteManager) {
             this.remoteManager.removeAllListeners();  // Use removeAllListeners() instead of individual removes
@@ -119,8 +127,17 @@ export class AndroidRemote extends EventEmitter {
         // Remove event listeners from pairingManager
         if (this.pairingManager) {
             this.pairingManager.removeAllListeners();
+            this.pairingManager.stop(); // ← Critical: Close TCP socket before nulling
             this.pairingManager = null;
         }
+        
+        // Clean up TLS manager connections for this host
+        if (this.tlsManager) {
+            this.tlsManager.cleanupHost(this.host, this.pairing_port);
+            this.tlsManager.cleanupHost(this.host, this.remote_port);
+        }
+        
+        console.log('AndroidRemote.stop(): Cleanup completed');
     }
 }
 

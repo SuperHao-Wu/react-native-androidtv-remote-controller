@@ -95,13 +95,18 @@ open ~/.appium/node_modules/appium-xcuitest-driver/node_modules/appium-webdriver
    - Repeat for **WebDriverAgentRunner** target
 
 3. **Build WebDriverAgent:**
+initial build
+```bash
+open -a xcode ~/.appium/node_modules/appium-xcuitest-driver/node_modules/appium-webdriveragent/WebDriverAgent.xcodeproj
+``` 
+Test if not work
 
 ```bash
 # Build for your device (replace with your device UDID)
-xcodebuild -project ~/.appium/.../WebDriverAgent.xcodeproj \
-           -scheme WebDriverAgentRunner \
-           -destination 'platform=iOS,id=YOUR-DEVICE-UDID' \
-           test-without-building
+ xcodebuild -project ~/.appium/node_modules/appium-xcuitest-driver/node_modules/appium-webdriveragent/WebDriverAgent.xcodeproj \
+  -scheme WebDriverAgentRunner \
+  -destination 'id=00008101-0010299E1484001E' \
+  test
 ```
 
 #### WebDriverAgent Verification

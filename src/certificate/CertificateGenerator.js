@@ -39,7 +39,7 @@ export class CertificateGenerator {
         ];
         cert.setSubject(attributes);
         cert.sign(keys.privateKey, forge.md.sha256.create());
-        console.debug('Exiting generateFull');
+        console.log('Exiting generateFull');
 
         return {
             cert : forge.pki.certificateToPem(cert),

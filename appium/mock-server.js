@@ -1,5 +1,18 @@
 const { startMockTLSServer } = require('../__tests__/MockServer');
 
+// Helper function to get local timestamp in same format as other logs
+function getLocalTimestamp() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const hours = String(now.getHours()).padStart(2, '0');
+  const minutes = String(now.getMinutes()).padStart(2, '0');
+  const seconds = String(now.getSeconds()).padStart(2, '0');
+  const ms = String(now.getMilliseconds()).padStart(3, '0');
+  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${ms}Z`;
+}
+
 class MockServerManager {
   constructor() {
     this.pairingServer = null;
@@ -31,22 +44,22 @@ class MockServerManager {
         responseDelay: 100,
         enablePairingFlow: true,
         onConnect: (socket) => {
-          console.log(`🖥️  [6467] ${new Date().toISOString()} Pairing server: Connection from`, socket.remoteAddress);
+          console.log(`🖥️  [6467] ${getLocalTimestamp()} Pairing server: Connection from`, socket.remoteAddress);
           this.pairingState.connected = true;
-          this.pairingState.lastActivity = new Date().toISOString();
+          this.pairingState.lastActivity = getLocalTimestamp();
         },
         onSecureConnect: (socket) => {
-          console.log(`🔐 [6467] ${new Date().toISOString()} Pairing server: Secure connection established`);
+          console.log(`🔐 [6467] ${getLocalTimestamp()} Pairing server: Secure connection established`);
         },
         onData: (socket, data) => {
-          console.log(`📨 [6467] ${new Date().toISOString()} Pairing server: Received`, data.length, 'bytes');
+          console.log(`📨 [6467] ${getLocalTimestamp()} Pairing server: Received`, data.length, 'bytes');
           this.updatePairingState(data);
           
           // Let the MockServer handle the default pairing flow by calling it directly
           this.handlePairingFlow(socket, data);
         },
         onClose: (socket) => {
-          console.log(`🚪 [6467] ${new Date().toISOString()} Pairing server: Connection closed`);
+          console.log(`🚪 [6467] ${getLocalTimestamp()} Pairing server: Connection closed`);
           this.pairingState.connected = false;
         }
       });
@@ -57,16 +70,16 @@ class MockServerManager {
         responseDelay: 100,
         enablePairingFlow: false,
         onConnect: (socket) => {
-          console.log(`🖥️  [6466] ${new Date().toISOString()} Remote server: Connection from`, socket.remoteAddress);
+          console.log(`🖥️  [6466] ${getLocalTimestamp()} Remote server: Connection from`, socket.remoteAddress);
         },
         onSecureConnect: (socket) => {
-          console.log(`🔐 [6466] ${new Date().toISOString()} Remote server: Secure connection established`);
+          console.log(`🔐 [6466] ${getLocalTimestamp()} Remote server: Secure connection established`);
         },
         onData: (socket, data) => {
-          console.log(`📨 [6466] ${new Date().toISOString()} Remote server: Received`, data.length, 'bytes');
+          console.log(`📨 [6466] ${getLocalTimestamp()} Remote server: Received`, data.length, 'bytes');
         },
         onClose: (socket) => {
-          console.log(`🚪 [6466] ${new Date().toISOString()} Remote server: Connection closed`);
+          console.log(`🚪 [6466] ${getLocalTimestamp()} Remote server: Connection closed`);
         }
       });
 
@@ -104,23 +117,23 @@ class MockServerManager {
       const pairingMessageManager = new PairingMessageManager({ system: "test" });
       const message = pairingMessageManager.parse(data);
       
-      this.pairingState.lastActivity = new Date().toISOString();
+      this.pairingState.lastActivity = getLocalTimestamp();
       
       if (message.pairingRequest) {
         this.pairingState.pairingRequestReceived = true;
-        console.log(`📋 [6467] ${new Date().toISOString()} Pairing protocol: PAIRING_REQUEST received`);
+        console.log(`📋 [6467] ${getLocalTimestamp()} Pairing protocol: PAIRING_REQUEST received`);
       } else if (message.pairingOption) {
         this.pairingState.pairingOptionReceived = true;
-        console.log(`📋 [6467] ${new Date().toISOString()} Pairing protocol: PAIRING_OPTION received`);
+        console.log(`📋 [6467] ${getLocalTimestamp()} Pairing protocol: PAIRING_OPTION received`);
       } else if (message.pairingConfiguration) {
         this.pairingState.pairingConfigurationReceived = true;
-        console.log(`📋 [6467] ${new Date().toISOString()} Pairing protocol: PAIRING_CONFIGURATION received (should trigger secret dialog)`);
+        console.log(`📋 [6467] ${getLocalTimestamp()} Pairing protocol: PAIRING_CONFIGURATION received (should trigger secret dialog)`);
       } else if (message.pairingSecret) {
         this.pairingState.pairingSecretReceived = true;
-        console.log(`📋 [6467] ${new Date().toISOString()} Pairing protocol: PAIRING_SECRET received`);
+        console.log(`📋 [6467] ${getLocalTimestamp()} Pairing protocol: PAIRING_SECRET received`);
       }
     } catch (error) {
-      console.log(`⚠️  [6467] ${new Date().toISOString()} Could not parse pairing message:`, error.message);
+      console.log(`⚠️  [6467] ${getLocalTimestamp()} Could not parse pairing message:`, error.message);
     }
   }
 
@@ -232,7 +245,7 @@ function startStatusServer(serverManager, port = 3001) {
         pairingServer: serverManager.pairingServer ? 'running' : 'stopped',
         remoteServer: serverManager.remoteServer ? 'running' : 'stopped',
         pairingState: serverManager.pairingState,
-        timestamp: new Date().toISOString()
+        timestamp: getLocalTimestamp()
       };
       
       res.writeHead(200);
