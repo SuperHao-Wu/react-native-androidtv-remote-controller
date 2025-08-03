@@ -32,16 +32,16 @@ class RemoteManager extends EventEmitter {
                 //ca: require('../../../../client-selfsigned.crt'),
             };
             
-            console.debug("Start Remote Connect");
+            console.log("Start Remote Connect");
             this.isManualStop = false;
             
-            //console.debug('RemoteManager.start(): before connectTLS');
+            //console.log('RemoteManager.start(): before connectTLS');
             this.client = TcpSockets.connectTLS(options, () => {
-                console.debug("Remote connected")
+                console.log("Remote connected")
             });
 
             this.client.on('timeout', () => {
-                console.debug('timeout');
+                console.log('timeout');
                 this.client.destroy();
             });
 
@@ -49,7 +49,7 @@ class RemoteManager extends EventEmitter {
             this.client.setTimeout(10000);
 
             this.client.on("secureConnect", () => {
-                console.debug(this.host + " Remote secureConnect");
+                console.log(this.host + " Remote secureConnect");
                 resolve(true);
             });
 
@@ -62,8 +62,8 @@ class RemoteManager extends EventEmitter {
                     let message = this.remoteMessageManager.parse(this.chunks);
 
                     if(!message.remotePingRequest){
-                        //console.debug(this.host + " Receive : " + Array.from(this.chunks));
-                        console.debug(this.host + " Receive : " + JSON.stringify(message.toJSON()));
+                        //console.log(this.host + " Receive : " + Array.from(this.chunks));
+                        console.log(this.host + " Receive : " + JSON.stringify(message.toJSON()));
                     }
 
                     if(message.remoteConfigure){
@@ -86,19 +86,19 @@ class RemoteManager extends EventEmitter {
                         this.emit('current_app', message.remoteImeKeyInject.appInfo.appPackage);
                     }
                     else if(message.remoteImeBatchEdit){
-                        console.debug("Receive IME BATCH EDIT" + message.remoteImeBatchEdit);
+                        console.log("Receive IME BATCH EDIT" + message.remoteImeBatchEdit);
                     }
                     else if(message.remoteImeShowRequest){
-                        console.debug("Receive IME SHOW REQUEST" + message.remoteImeShowRequest);
+                        console.log("Receive IME SHOW REQUEST" + message.remoteImeShowRequest);
                     }
                     else if(message.remoteVoiceBegin){
-                        //console.debug("Receive VOICE BEGIN" + message.remoteVoiceBegin);
+                        //console.log("Receive VOICE BEGIN" + message.remoteVoiceBegin);
                     }
                     else if(message.remoteVoicePayload){
-                        //console.debug("Receive VOICE PAYLOAD" + message.remoteVoicePayload);
+                        //console.log("Receive VOICE PAYLOAD" + message.remoteVoicePayload);
                     }
                     else if(message.remoteVoiceEnd){
-                        //console.debug("Receive VOICE END" + message.remoteVoiceEnd);
+                        //console.log("Receive VOICE END" + message.remoteVoiceEnd);
                     }
                     else if(message.remoteStart){
                         this.emit('powered', message.remoteStart.started);
@@ -109,13 +109,13 @@ class RemoteManager extends EventEmitter {
                             maximum : message.remoteSetVolumeLevel.volumeMax,
                             muted : message.remoteSetVolumeLevel.volumeMuted,
                         });
-                        //console.debug("Receive SET VOLUME LEVEL" + message.remoteSetVolumeLevel.toJSON().toString());
+                        //console.log("Receive SET VOLUME LEVEL" + message.remoteSetVolumeLevel.toJSON().toString());
                     }
                     else if(message.remoteSetPreferredAudioDevice){
-                        //console.debug("Receive SET PREFERRED AUDIO DEVICE" + message.remoteSetPreferredAudioDevice);
+                        //console.log("Receive SET PREFERRED AUDIO DEVICE" + message.remoteSetPreferredAudioDevice);
                     }
                     else if(message.remoteError){
-                        console.debug("Receive REMOTE ERROR");
+                        console.log("Receive REMOTE ERROR");
                         this.emit('error', {error : message.remoteError});
                     }
                     else{
@@ -198,7 +198,7 @@ class RemoteManager extends EventEmitter {
     }
 
     stop(){
-        console.debug(`${this.host} RemoteManager.stop(): Cleaning up connection`);
+        console.log(`${this.host} RemoteManager.stop(): Cleaning up connection`);
         
         this.isManualStop = true;
         
@@ -220,7 +220,7 @@ class RemoteManager extends EventEmitter {
         this.chunks = Buffer.from([]);
         this.error = null;
         
-        console.debug(`${this.host} RemoteManager.stop(): Cleanup completed`);
+        console.log(`${this.host} RemoteManager.stop(): Cleanup completed`);
     }
 }
 
