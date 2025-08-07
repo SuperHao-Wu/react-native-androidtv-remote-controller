@@ -11,8 +11,10 @@ import { GlobalTLSManager } from '../network/index.js';
 class PairingManager extends EventEmitter {
 	constructor(host, port, certs, service_name, systeminfo) {
 		super();
+		this.instanceId = Math.random().toString(36).substr(2, 8);
 		this.host = host;
 		this.port = port;
+		console.log(`🎯 PairingManager: [${this.instanceId}] Created instance for ${host}:${port}`);
 		this.chunks = Buffer.from([]);
 		this.certs = certs;
 		this.service_name = service_name;
@@ -105,6 +107,8 @@ class PairingManager extends EventEmitter {
 	}
 
 	async start() {
+		console.log(`🎯 PairingManager: [${this.instanceId}] Starting pairing process for ${this.host}:${this.port}`);
+		debugger
 		return new Promise(async (resolve, reject) => {
 			// Add connection timeout protection
 			this.connectionTimeout = setTimeout(() => {
@@ -129,7 +133,7 @@ class PairingManager extends EventEmitter {
 				keyAlias: this.certs.keyAlias,
 			};
 
-			console.log(`${this.host} PairingManager.start(): initiating connection using connection pool`);
+			console.log(`🎯 PairingManager: [${this.instanceId}] ${this.host} PairingManager.start(): initiating connection using connection pool`);
 			this.connectionState = 'connecting';
 
 			console.log(`${this.host} 🔧 Creating TLS connection through connection pool with options:`, {
@@ -154,7 +158,9 @@ class PairingManager extends EventEmitter {
 
 			try {
 				// Use connection pool instead of direct TLS connection
+				console.log(`🎯 PairingManager: [${this.instanceId}] ${this.host} 🔄 PairingManager: Requesting connection from pool - START`);
 				this.client = await this.tlsManager.getConnection(this.host, this.port, options);
+				console.log(`🎯 PairingManager: [${this.instanceId}] ${this.host} 🔄 PairingManager: Requesting connection from pool - COMPLETED`);
 				
 				console.log(`${this.host} 🔐 TLS connection obtained from pool`);
 				this.connectionState = 'connected';

@@ -36,8 +36,10 @@ class RemoteManager extends EventEmitter {
             this.isManualStop = false;
             
             //console.log('RemoteManager.start(): before connectTLS');
+            // CRITICAL FIX: Use callback-only approach to avoid React Native TLS event conflicts
             this.client = TcpSockets.connectTLS(options, () => {
-                console.log("Remote connected")
+                console.log(this.host + " Remote secureConnect - callback fired");
+                resolve(true);
             });
 
             this.client.on('timeout', () => {
@@ -47,11 +49,6 @@ class RemoteManager extends EventEmitter {
 
             // Le ping est reçu toutes les 5 secondes
             this.client.setTimeout(10000);
-
-            this.client.on("secureConnect", () => {
-                console.log(this.host + " Remote secureConnect");
-                resolve(true);
-            });
 
             this.client.on('data', (data) => {
                 let buffer = Buffer.from(data);

@@ -46,7 +46,7 @@ class GlobalTLSManager {
     getStats() {
         return {
             pools: this.connectionPool.getPoolStats(),
-            queues: this.connectionPool.requestQueue.getQueueStatus(),
+            queues: this.connectionPool.tlsQueue.getQueueStatus(),
             initialized: this.initialized
         };
     }
@@ -57,7 +57,7 @@ class GlobalTLSManager {
         console.log(`🌐 GlobalTLSManager: Cleaning up connections for ${hostPort}`);
         
         // Clear any pending requests
-        this.connectionPool.requestQueue.clearQueue(host, port);
+        this.connectionPool.tlsQueue.clearQueue(host, port);
         
         // Note: Pool cleanup happens automatically through connection events
     }

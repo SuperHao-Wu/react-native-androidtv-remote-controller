@@ -9,8 +9,9 @@ class TLSRequestQueue {
     
     async queueRequest(host, port, connectOptions) {
         const hostPort = `${host}:${port}`;
+        const requestId = Math.random().toString(36).substr(2, 8);
         
-        console.log(`🚦 TLSRequestQueue: Queueing TLS request for ${hostPort}`);
+        console.log(`🚦 TLSRequestQueue: [${requestId}] Queueing TLS request for ${hostPort}`);
         
         return new Promise((resolve, reject) => {
             // Initialize queue for this host:port if it doesn't exist
@@ -30,10 +31,11 @@ class TLSRequestQueue {
                 connectOptions,
                 resolve,
                 reject,
-                timestamp: Date.now()
+                timestamp: Date.now(),
+                requestId
             });
             
-            console.log(`🚦 TLSRequestQueue: Queue length for ${hostPort}: ${queue.requests.length}`);
+            console.log(`🚦 TLSRequestQueue: [${requestId}] Queue length for ${hostPort}: ${queue.requests.length}`);
             
             // Process queue if not already processing
             this._processQueue(hostPort);
@@ -51,10 +53,10 @@ class TLSRequestQueue {
         
         while (queue.requests.length > 0) {
             const request = queue.requests.shift();
-            const { host, port, connectOptions, resolve, reject } = request;
+            const { host, port, connectOptions, resolve, reject, requestId } = request;
             
             try {
-                console.log(`🚦 TLSRequestQueue: Processing TLS request for ${hostPort} (${queue.requests.length} remaining)`);
+                console.log(`🚦 TLSRequestQueue: [${requestId}] Processing TLS request for ${hostPort} (${queue.requests.length} remaining)`);
                 
                 // Create TLS connection with proper error handling
                 const connection = await this._createTLSConnection(host, port, connectOptions);
@@ -86,9 +88,14 @@ class TLSRequestQueue {
         return new Promise((resolve, reject) => {
             console.log(`🔧 TLSRequestQueue: Creating TLS connection to ${host}:${port}`);
             
+            let socket = null;
+            
             const timeoutId = setTimeout(() => {
                 console.error(`🔧 TLSRequestQueue: TLS connection timeout for ${host}:${port}`);
-                socket.destroy(new Error('TLS connection timeout'));
+                if (socket) {
+                    socket.destroy(new Error('TLS connection timeout'));
+                }
+                reject(new Error('TLS connection timeout'));
             }, 15000); // 15 second timeout
             
             // Log what we're sending to TLS connection for Sony TV debugging
@@ -105,11 +112,9 @@ class TLSRequestQueue {
                 keyAlias: connectOptions.keyAlias
             });
 
-            const socket = TcpSockets.connectTLS(connectOptions, () => {
-                console.log(`🔧 TLSRequestQueue: TLS connection established for ${host}:${port}`);
-            });
-            
-            socket.on('secureConnect', () => {
+            // CRITICAL FIX: Use callback-only approach to avoid React Native TLS event conflicts
+            socket = TcpSockets.connectTLS(connectOptions, () => {
+                console.log(`🔧 TLSRequestQueue: secureConnect callback fired for ${host}:${port}`);
                 clearTimeout(timeoutId);
                 console.log(`🔧 TLSRequestQueue: TLS handshake completed for ${host}:${port}`);
                 
@@ -128,6 +133,10 @@ class TLSRequestQueue {
                 
                 const pooledConnection = new PooledTLSConnection(socket, host, port);
                 resolve(pooledConnection);
+            });
+            
+            socket.on('connect', () => {
+                console.log(`🔧 TLSRequestQueue: TCP connection established for ${host}:${port}`);
             });
             
             socket.on('error', (error) => {

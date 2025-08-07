@@ -22,7 +22,7 @@
 		"protobufjs": "^7.4.0",
 		"react": "18.3.1",
 		"react-native": "0.77.0",
-		"react-native-androidtv-remote": "file:../dist",
+		"react-native-androidtv-remote": "file:..",
 		"react-native-fs": "^2.20.0",
 		"react-native-modpow": "^1.1.0",
 		"react-native-tcp-socket": "file:../react-native-tcp-socket",
