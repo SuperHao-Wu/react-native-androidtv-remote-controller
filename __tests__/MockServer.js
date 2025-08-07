@@ -42,6 +42,50 @@ const createTestCerts = () => {
 	return { cert: pems.cert, key: pems.private };
 };
 
+// Validate client certificate like Sony TV does
+function validateClientCertificate(socket, clientCert) {
+	console.log("Mock server: Validating client certificate...");
+	
+	// Check if client certificate is present
+	if (!clientCert || Object.keys(clientCert).length === 0) {
+		console.log("Mock server: ❌ No client certificate provided");
+		return false;
+	}
+	
+	// Log client certificate details for debugging
+	console.log("Mock server: Client certificate details:", {
+		subject: clientCert.subject,
+		issuer: clientCert.issuer,
+		valid_from: clientCert.valid_from,
+		valid_to: clientCert.valid_to,
+		fingerprint: clientCert.fingerprint,
+		serialNumber: clientCert.serialNumber
+	});
+	
+	// Validate certificate has required properties for client authentication
+	const validationChecks = {
+		hasSubject: !!clientCert.subject,
+		hasValidDates: !!clientCert.valid_from && !!clientCert.valid_to,
+		hasFingerprint: !!clientCert.fingerprint,
+		hasSerial: !!clientCert.serialNumber,
+		notExpired: new Date(clientCert.valid_to) > new Date(),
+		notYetValid: new Date(clientCert.valid_from) <= new Date()
+	};
+	
+	console.log("Mock server: Certificate validation checks:", validationChecks);
+	
+	// Check if all validations pass
+	const isValid = Object.values(validationChecks).every(check => check === true);
+	
+	if (!isValid) {
+		console.log("Mock server: ❌ Client certificate validation failed");
+		return false;
+	}
+	
+	console.log("Mock server: ✅ Client certificate validation passed");
+	return true;
+}
+
 function startMockTLSServer({ 
 	port, 
 	onConnect, 
@@ -50,7 +94,8 @@ function startMockTLSServer({
 	onClose,
 	responseDelay = 0,
 	simulateTimeout = false,
-	enablePairingFlow = true 
+	enablePairingFlow = true,
+	validateCertificates = false  // Enable Sony TV-like certificate validation
 }) {
 	const { cert, key } = createTestCerts();
 	
@@ -58,7 +103,12 @@ function startMockTLSServer({
 		key: key,
 		cert: cert,
 		rejectUnauthorized: false,
-		requestCert: false
+		requestCert: true,  // Request client certificate like Sony TV
+		checkServerIdentity: () => undefined, // Allow any server identity
+		// Custom certificate validation like Sony TV
+		SNICallback: (servername, callback) => {
+			callback(null, tls.createSecureContext({ key, cert }));
+		}
 	};
 
 	const pairingMessageManager = new PairingMessageManager({ system: "test" });
@@ -68,6 +118,24 @@ function startMockTLSServer({
 
 		socket.on("secureConnect", () => {
 			console.log("Mock server: client securely connected");
+			
+			// Conditionally validate client certificate like Sony TV does
+			if (validateCertificates) {
+				const clientCert = socket.getPeerCertificate();
+				const hasValidClientCert = validateClientCertificate(socket, clientCert);
+				
+				if (!hasValidClientCert) {
+					console.log("Mock server: Pairing failed due to invalid client certificate");
+					console.log("Mock server: SSL_NULL_WITH_NULL_NULL - No valid client certificate");
+					socket.destroy(new Error("No local certificate for TLSv1.2 SSL_NULL_WITH_NULL_NULL"));
+					return;
+				}
+				
+				console.log("Mock server: Client certificate validation passed");
+			} else {
+				console.log("Mock server: Certificate validation disabled (mock mode)");
+			}
+			
 			if (onSecureConnect) onSecureConnect(socket);
 		});
 

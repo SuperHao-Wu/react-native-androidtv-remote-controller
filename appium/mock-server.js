@@ -18,6 +18,7 @@ class MockServerManager {
     this.pairingServer = null;
     this.remoteServer = null;
     this.isRunning = false;
+    this.validateCertificates = true; // Default to Sony TV-like behavior
     this.pairingState = {
       connected: false,
       pairingRequestReceived: false,
@@ -29,6 +30,12 @@ class MockServerManager {
     };
   }
 
+  // Enable/disable certificate validation for testing
+  setCertificateValidation(enabled) {
+    this.validateCertificates = enabled;
+    console.log(`🔐 Certificate validation ${enabled ? 'ENABLED' : 'DISABLED'} (${enabled ? 'Sony TV mode' : 'Mock mode'})`);
+  }
+
   async start() {
     if (this.isRunning) {
       console.log('🖥️  Mock servers already running');
@@ -38,11 +45,12 @@ class MockServerManager {
     console.log('🚀 Starting mock Sony TV servers...');
 
     try {
-      // Start pairing server (6467)
+      // Start pairing server (6467) with configurable certificate validation
       this.pairingServer = await startMockTLSServer({
         port: 6467,
         responseDelay: 100,
         enablePairingFlow: true,
+        validateCertificates: this.validateCertificates, // Use instance setting
         onConnect: (socket) => {
           console.log(`🖥️  [6467] ${getLocalTimestamp()} Pairing server: Connection from`, socket.remoteAddress);
           this.pairingState.connected = true;
@@ -244,6 +252,10 @@ function startStatusServer(serverManager, port = 3001) {
         isRunning: serverManager.isRunning,
         pairingServer: serverManager.pairingServer ? 'running' : 'stopped',
         remoteServer: serverManager.remoteServer ? 'running' : 'stopped',
+        certificateValidation: {
+          enabled: serverManager.validateCertificates,
+          mode: serverManager.validateCertificates ? 'Sony TV mode' : 'Mock mode'
+        },
         pairingState: serverManager.pairingState,
         timestamp: getLocalTimestamp()
       };
@@ -254,6 +266,14 @@ function startStatusServer(serverManager, port = 3001) {
       serverManager.resetPairingState();
       res.writeHead(200);
       res.end(JSON.stringify({ success: true, message: 'Pairing state reset' }));
+    } else if (req.url === '/certificate-validation/enable' && req.method === 'POST') {
+      serverManager.setCertificateValidation(true);
+      res.writeHead(200);
+      res.end(JSON.stringify({ success: true, message: 'Certificate validation enabled (Sony TV mode)' }));
+    } else if (req.url === '/certificate-validation/disable' && req.method === 'POST') {
+      serverManager.setCertificateValidation(false);
+      res.writeHead(200);
+      res.end(JSON.stringify({ success: true, message: 'Certificate validation disabled (Mock mode)' }));
     } else {
       res.writeHead(404);
       res.end(JSON.stringify({ error: 'Not found' }));

@@ -38,12 +38,63 @@ export class CertificateGenerator {
             {shortName: 'OU', value: 'OU'}
         ];
         cert.setSubject(attributes);
+        
+        // Set issuer to self (self-signed certificate)
+        cert.setIssuer(attributes);
+        
+        // Add extensions required for client authentication
+        cert.setExtensions([
+            {
+                name: 'keyUsage',
+                digitalSignature: true,
+                keyEncipherment: true,
+                critical: true
+            },
+            {
+                name: 'extKeyUsage',
+                clientAuth: true,
+                critical: true
+            },
+            {
+                name: 'basicConstraints',
+                cA: false,
+                critical: true
+            }
+        ]);
+
+        console.log('🔑 Certificate Extensions Added:', {
+            keyUsage: 'digitalSignature + keyEncipherment',
+            extKeyUsage: 'clientAuth',
+            basicConstraints: 'cA=false'
+        });
+        
         cert.sign(keys.privateKey, forge.md.sha256.create());
+        
+        // Log certificate details for debugging
+        const certPem = forge.pki.certificateToPem(cert);
+        const keyPem = forge.pki.privateKeyToPem(keys.privateKey);
+        
+        console.log('📋 Generated Certificate Details:', {
+            subject: cert.subject.getField('CN')?.value,
+            issuer: cert.issuer.getField('CN')?.value,
+            serialNumber: cert.serialNumber,
+            validFrom: cert.validity.notBefore.toISOString(),
+            validTo: cert.validity.notAfter.toISOString(),
+            keyAlgorithm: 'RSA-2048',
+            signatureAlgorithm: 'SHA256withRSA',
+            extensions: cert.extensions?.map(ext => ext.name),
+            certLength: certPem.length,
+            keyLength: keyPem.length,
+            certType: 'PEM'
+        });
+        
+        console.log('🔑 Certificate PEM Preview:', certPem.substring(0, 200) + '...');
+        
         console.log('Exiting generateFull');
 
         return {
-            cert : forge.pki.certificateToPem(cert),
-            key : forge.pki.privateKeyToPem(keys.privateKey),
+            cert: certPem,
+            key: keyPem,
         }
     }
 }
