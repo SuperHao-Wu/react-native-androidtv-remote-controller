@@ -258,6 +258,10 @@ NSString *const RCTTCPErrorDomain = @"RCTTCPErrorDomain";
     NSLog(@"🔧 startTLS: Called [_tcpSocket startTLS], waiting for socketDidSecure callback");
 }
 
+- (BOOL)isTLS {
+    return _tls;
+}
+
 - (BOOL)isTLSActuallyReady {
     // Check multiple conditions for true TLS readiness with detailed logging
     BOOL tlsFlag = _tls;

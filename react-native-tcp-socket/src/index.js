@@ -46,7 +46,10 @@ function createTLSServer(options, connectionListener) {
 function connectTLS(options, callback) {
     const socket = new Socket();
     const tlsSocket = new TLSSocket(socket, options);
-    socket.once('connect', () => tlsSocket.emit('secureConnect'));
+    
+    // CRITICAL FIX: Don't emit fake 'secureConnect' after TCP connect
+    // Wait for real TLS handshake completion from native layer
+    // The native layer will call the appropriate callbacks when TLS is ready
     if (callback) tlsSocket.once('secureConnect', callback);
     socket.connect(options);
     return tlsSocket;
