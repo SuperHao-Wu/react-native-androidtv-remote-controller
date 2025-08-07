@@ -91,13 +91,40 @@ class TLSRequestQueue {
                 socket.destroy(new Error('TLS connection timeout'));
             }, 15000); // 15 second timeout
             
+            // Log what we're sending to TLS connection for Sony TV debugging
+            console.log(`🔧 TLSRequestQueue: TLS Connection Options:`, {
+                host,
+                port,
+                hasKey: !!connectOptions.key,
+                hasCert: !!connectOptions.cert,
+                keySize: connectOptions.key ? connectOptions.key.length : 0,
+                certSize: connectOptions.cert ? connectOptions.cert.length : 0,
+                rejectUnauthorized: connectOptions.rejectUnauthorized,
+                androidKeyStore: connectOptions.androidKeyStore,
+                certAlias: connectOptions.certAlias,
+                keyAlias: connectOptions.keyAlias
+            });
+
             const socket = TcpSockets.connectTLS(connectOptions, () => {
-                console.log(`🔧 TLSRequestQueue: TCP connection established for ${host}:${port} (waiting for TLS)`);
+                console.log(`🔧 TLSRequestQueue: TLS connection established for ${host}:${port}`);
             });
             
             socket.on('secureConnect', () => {
                 clearTimeout(timeoutId);
                 console.log(`🔧 TLSRequestQueue: TLS handshake completed for ${host}:${port}`);
+                
+                // Log TLS connection state
+                try {
+                    console.log(`🔧 TLSRequestQueue: TLS Connection State:`, {
+                        authorized: socket.authorized,
+                        authorizationError: socket.authorizationError,
+                        encrypted: socket.encrypted,
+                        protocol: socket.getProtocol ? socket.getProtocol() : 'Unknown',
+                        cipher: socket.getCipher ? socket.getCipher() : 'Unknown'
+                    });
+                } catch (stateError) {
+                    console.log(`🔧 TLSRequestQueue: Could not get TLS state:`, stateError.message);
+                }
                 
                 const pooledConnection = new PooledTLSConnection(socket, host, port);
                 resolve(pooledConnection);

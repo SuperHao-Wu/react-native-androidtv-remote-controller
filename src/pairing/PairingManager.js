@@ -137,9 +137,19 @@ class PairingManager extends EventEmitter {
 				port: options.port,
 				hasKey: !!options.key,
 				hasCert: !!options.cert,
+				keyLength: options.key ? options.key.length : 0,
+				certLength: options.cert ? options.cert.length : 0,
+				keyType: options.key ? (options.key.includes('BEGIN PRIVATE KEY') ? 'PEM' : 'Unknown') : 'None',
+				certType: options.cert ? (options.cert.includes('BEGIN CERTIFICATE') ? 'PEM' : 'Unknown') : 'None',
 				androidKeyStore: options.androidKeyStore,
 				certAlias: options.certAlias,
 				keyAlias: options.keyAlias
+			});
+
+			// Log certificate details for debugging TLS issues
+			console.log(`${this.host} 🔑 Client Certificate Details:`, {
+				keyPreview: options.key ? options.key.substring(0, 100) + '...' : 'None',
+				certPreview: options.cert ? options.cert.substring(0, 100) + '...' : 'None'
 			});
 
 			try {
@@ -152,18 +162,44 @@ class PairingManager extends EventEmitter {
 				this.isCancelled = false;
 				this.client.pairingManager = this;
 
-				// Log TLS connection details
+				// Log comprehensive TLS connection details for Sony TV debugging
 				try {
 					const clientCert = await this.client.getCertificate();
 					const serverCert = await this.client.getPeerCertificate();
-					console.log(`${this.host} 📜 TLS certificates exchanged:`, {
-						clientCertValid: !!clientCert,
-						serverCertValid: !!serverCert,
+					
+					console.log(`${this.host} 📜 TLS Handshake Certificate Analysis:`, {
+						clientCertPresent: !!clientCert,
+						serverCertPresent: !!serverCert,
 						clientSubject: clientCert?.subject,
-						serverSubject: serverCert?.subject
+						clientIssuer: clientCert?.issuer,
+						clientFingerprint: clientCert?.fingerprint,
+						clientValidFrom: clientCert?.validFrom,
+						clientValidTo: clientCert?.validTo,
+						serverSubject: serverCert?.subject,
+						serverIssuer: serverCert?.issuer,
+						serverFingerprint: serverCert?.fingerprint
 					});
+
+					// Specifically check if client certificate has the right properties for Android TV
+					if (clientCert) {
+						console.log(`${this.host} 🔍 Client Certificate Validation:`, {
+							hasSubject: !!clientCert.subject,
+							hasPublicKey: !!clientCert.pubkey,
+							keyAlgorithm: clientCert.keyAlgorithm || 'Unknown',
+							signatureAlgorithm: clientCert.signatureAlgorithm || 'Unknown',
+							version: clientCert.version || 'Unknown',
+							serialNumber: clientCert.serialNumber || 'Unknown'
+						});
+					} else {
+						console.error(`${this.host} ❌ CRITICAL: No client certificate retrieved - this explains 'SSL_NULL_WITH_NULL_NULL' error on Sony TV`);
+					}
+
 				} catch (certError) {
-					console.log(`${this.host} ⚠️ Could not retrieve TLS certificates:`, certError);
+					console.error(`${this.host} ❌ TLS Certificate retrieval failed:`, {
+						error: certError.message,
+						code: certError.code,
+						stack: certError.stack?.split('\n').slice(0, 3).join('\n')
+					});
 				}
 
 				// Add delay before sending pairing request to avoid race condition
@@ -213,6 +249,10 @@ class PairingManager extends EventEmitter {
 							} else if (message.pairingConfigurationAck) {
 								console.log(`${this.host} Received pairingConfigurationAck, emitting secret event`);
 								this.connectionState = 'paired';
+								// CRITICAL: Release connection now that pairing is complete
+								// This prevents race condition with connection pool cleanup
+								console.log(`${this.host} 🔓 Releasing connection after successful pairing`);
+								this.tlsManager.releaseConnection(this.client);
 								this.emit('secret');
 							} else if (message.pairingSecretAck) {
 								console.log(this.host + ' Paired!');
@@ -237,6 +277,9 @@ class PairingManager extends EventEmitter {
 					debugger;
 					console.log(`${this.host} 🚪 Socket close event - hasError: ${hasError}, connectionState: ${this.connectionState}`);
 					
+					// Check if pairing was completed before cleaning up state
+					const wasAlreadyPaired = this.connectionState === 'paired';
+					
 					// Clean up connection state and timeout
 					this.connectionState = 'disconnected';
 					if (this.connectionTimeout) {
@@ -244,8 +287,14 @@ class PairingManager extends EventEmitter {
 						this.connectionTimeout = null;
 					}
 					
-					// Release connection back to pool
-					this.tlsManager.releaseConnection(this.client);
+					// Only release connection if pairing was not completed
+					// (If pairing completed, connection was already released at the right time)
+					if (!wasAlreadyPaired) {
+						console.log(`${this.host} 🔓 Releasing connection on close (pairing incomplete)`);
+						this.tlsManager.releaseConnection(this.client);
+					} else {
+						console.log(`${this.host} ✅ Connection already released after successful pairing`);
+					}
 
 					if (hasError) {
 						console.log(`${this.host} ❌ PairingManager.close() failure - connection had errors`);
@@ -254,9 +303,12 @@ class PairingManager extends EventEmitter {
 						console.log(`${this.host} 🚫 PairingManager.close() on cancelPairing()`);
 						this.isCancelled = false;
 						reject(false);
-					} else {
-						console.log(`${this.host} ✅ PairingManager.close() success - normal closure`);
+					} else if (this.connectionState === 'paired') {
+						console.log(`${this.host} ✅ PairingManager.close() success - pairing completed`);
 						resolve(true);
+					} else {
+						console.log(`${this.host} ❌ PairingManager.close() failure - connection closed before pairing completed (state: ${this.connectionState})`);
+						reject(false);
 					}
 				});
 
