@@ -195,6 +195,14 @@ npx wdio run ./appium/wdio.conf.js
 - **Tests**: Device connection and app responsiveness
 - **Target**: Quick setup validation
 
+## TCP debug with Wireshark 
+1. open wireshark
+2. put filter : (ip.addr == 192.168.2.150) && (tcp.port == 6467 || tcp.port == 6466)
+3. start tracking
+4. start the test 
+5. stop 
+6. File -> Export Packet Dissections -> As CSV 
+
 ## Test Scenarios
 
 ### 1. Connection Lifecycle Tests
