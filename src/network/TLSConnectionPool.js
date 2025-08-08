@@ -20,7 +20,7 @@ class TLSConnectionPool {
         
         console.log(`🏊 TLSConnectionPool: [${requestId}] Requesting connection for ${hostPort} - START`);
         console.log(`🏊 TLSConnectionPool: [${requestId}] Current pool stats:`, this.getPoolStats());
-        console.log(`🏊 TLSConnectionPool: [${requestId}] Current queue status:`, this.tlsQueue.getQueueStatus());
+        console.log(`🏊 TLSConnectionPool: [${requestId}] Current retry status:`, this.tlsQueue.getRetryStatus());
         
         // Try to get existing available connection first
         const existingConnection = this._getAvailableConnection(hostPort);
@@ -78,8 +78,8 @@ class TLSConnectionPool {
     }
     
     async _createNewConnection(host, port, connectOptions, hostPort, requestId) {
-        console.log(`🏊 TLSConnectionPool: [${requestId}] Delegating to TLS queue for ${hostPort}`);
-        return await this.tlsQueue.queueRequest(host, port, connectOptions);
+        console.log(`🏊 TLSConnectionPool: [${requestId}] Delegating to TLS retry logic for ${hostPort}`);
+        return await this.tlsQueue.createConnectionWithRetry(host, port, connectOptions);
     }
     
     _getAvailableConnection(hostPort) {
@@ -108,7 +108,7 @@ class TLSConnectionPool {
             if (pool.length < this.maxPoolSize) {
                 // Space available, create new connection
                 const [host, port] = hostPort.split(':');
-                const connection = await this.tlsQueue.queueRequest(host, parseInt(port), connectOptions);
+                const connection = await this.tlsQueue.createConnectionWithRetry(host, parseInt(port), connectOptions);
                 this._addToPool(hostPort, connection);
                 connection.markInUse();
                 return connection;
