@@ -155,6 +155,10 @@ cd ios && pod install && cd ..
 brew install libimobiledevice
 # show the id
 idevice_id -l
+
+# whe this doesn't work  or idevicesyslog doesn't show anything
+sudo killall usbmuxd 
+brew services restart usbmuxd 
 # Build and install on device (replace with your device UDID if different)
 npx react-native run-ios --device $(idevice_id -l)
 ```
