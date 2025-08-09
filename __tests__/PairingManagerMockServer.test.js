@@ -2,7 +2,7 @@ import { startMockTLSServer } from './MockServer';
 import { PairingManager } from '../src/pairing/PairingManager';
 
 // Mock TcpSockets but allow real TLS connections to our mock server
-jest.mock('react-native-tcp-socket', () => {
+jest.mock('../src/tcp-socket/src/index.js', () => {
 	const tls = require('tls');
 	return {
 		connectTLS: (options, callback) => {

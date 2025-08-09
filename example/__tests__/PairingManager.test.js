@@ -1,14 +1,14 @@
 import { PairingManager } from "../../src/pairing/PairingManager";
 import { EventEmitter } from "events";
 
-// Mock TcpSockets
-jest.mock("react-native-tcp-socket", () => {
+// Mock TcpSockets (now bundled in the library)
+jest.mock("../../src/tcp-socket/src/index.js", () => {
 	return {
 		connectTLS: jest.fn()
 	};
 });
 
-import TcpSockets from "react-native-tcp-socket";
+import TcpSockets from "../../src/tcp-socket/src/index.js";
 
 describe("PairingManager connection lifecycle", () => {
 	let mockSocket;

@@ -8,11 +8,12 @@
 		"node": ">=14.18.1"
 	},
 	"scripts": {
-		"babel": "babel ./src/*.* --out-dir dist --delete-dir-on-start -D && babel ./src/certificate/*.* --out-dir dist/certificate -D && babel ./src/pairing/*.* --out-dir dist/pairing -D && babel ./src/remote/*.* --out-dir dist/remote -D && babel ./src/network/*.* --out-dir dist/network -D",
+		"babel": "babel ./src/*.* --out-dir dist --delete-dir-on-start -D && babel ./src/certificate/*.* --out-dir dist/certificate -D && babel ./src/pairing/*.* --out-dir dist/pairing -D && babel ./src/remote/*.* --out-dir dist/remote -D && babel ./src/network/*.* --out-dir dist/network -D && babel ./src/tcp-socket/src/*.* --out-dir dist/tcp-socket/src -D",
 		"test": "jest",
 		"build:reinstall-js": "cd example && rm -rf node_modules && yarn cache clean && yarn install",
 		"build:reinstall-pod": "cd example/ios && rm -rf Pods build && rm -f Podfile.lock && pod cache clean --all && pod install",
-		"build:ios-full": "yarn babel && yarn build:reinstall-js && yarn build:reinstall-pod && cd example && npx react-native start --reset-cache & sleep 3 && yarn ios --device && cd ..",
+		"start:ios": "cd example && lsof -ti:8081 | xargs kill -9 2>/dev/null; npx react-native start --port 8081 --reset-cache & sleep 3 && yarn ios --device",
+		"build:ios-full": "yarn babel && yarn build:reinstall-js && yarn build:reinstall-pod && yarn start:ios",
 		"build:ios": "yarn babel && cd example && rm -rf node_modules && yarn install && cd ios && rm -rf Pods && pod install && cd .. && yarn ios --device && cd ..",
 		"debug:native-logs": "idevicesyslog | grep -E \"(TcpSocket|SSL|TLS|secureConnect|certificate|startTLS|socketDidSecure|🔧|🔐|🚦|🏊|🌐|GlobalTLSManager|TLSConnectionPool|TLSRequestQueue)\" | ts '%Y-%m-%d %H:%M:%S' > native-logs_$(date +%Y-%m-%d_%H-%M-%S).txt",
 		"debug:js-logs": "idevicesyslog | grep -E \"(TestAndroidTVRemoteApp|Console|JavaScript|🌐|🚦|🏊|PairingManager|GlobalTLSManager|TLSConnectionPool|TLSRequestQueue)\" | ts '%Y-%m-%d %H:%M:%S' > js-logs_$(date +%Y-%m-%d_%H-%M-%S).txt",
@@ -38,8 +39,7 @@
 	"license": "MIT",
 	"dependencies": {
 		"node-forge": "^1.3.1",
-		"protobufjs": "^7.3.0",
-		"react-native-tcp-socket": "file:./react-native-tcp-socket"
+		"protobufjs": "^7.3.0"
 	},
 	"peerDependencies": {
 		"react-native": ">=0.60.0",

@@ -1,12 +1,15 @@
+// TcpSockets is now bundled in react-native-androidtv-remote
 declare module 'net' {
-    import TcpSockets from 'react-native-tcp-socket';
-    export = TcpSockets;
+    // Note: TcpSockets types are now internal to react-native-androidtv-remote
+    // These declarations may need updating if net/tls module usage is required
+    export = any;
 }
 
 declare module 'tls' {
-    import TcpSockets from 'react-native-tcp-socket';
-    export const Server = TcpSockets.TLSServer;
-    export const TLSSocket = TcpSockets.TLSSocket;
-    export const connect = TcpSockets.connectTLS;
-    export const createServer = TcpSockets.createTLSServer;
+    // Note: TcpSockets types are now internal to react-native-androidtv-remote
+    // These declarations may need updating if net/tls module usage is required
+    export const Server: any;
+    export const TLSSocket: any;
+    export const connect: any;
+    export const createServer: any;
 }

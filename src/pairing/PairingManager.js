@@ -2,7 +2,7 @@ import { PairingMessageManager } from './PairingMessageManager.js';
 import forge from 'node-forge';
 import { Buffer } from 'buffer';
 import EventEmitter from 'events';
-import TcpSockets from 'react-native-tcp-socket';
+import TcpSockets from '../tcp-socket/src/index.js';
 import { get_modulus_exponent } from './pairing_utils.js';
 import { GlobalTLSManager } from '../network/index.js';
 

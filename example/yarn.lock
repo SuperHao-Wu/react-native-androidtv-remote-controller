@@ -2510,7 +2510,7 @@ buffer-from@^1.0.0:
   resolved "https://registry.yarnpkg.com/buffer-from/-/buffer-from-1.1.2.tgz#2b146a6fd72e80b4f55d255f35ed59a3a9a41bd5"
   integrity sha512-E+XQCRwSbaaiChtv6k6Dwgc+bx+Bs6vuKJHHl5kox/BaKbhiXzqQOwK4cO22yElGp2OCmjwVhT3HmxgyPGnJfQ==
 
-buffer@^5.4.3, buffer@^5.5.0:
+buffer@^5.5.0:
   version "5.7.1"
   resolved "https://registry.yarnpkg.com/buffer/-/buffer-5.7.1.tgz#ba62e7c13133053582197160851a8f648e99eed0"
   integrity sha512-EHcyIPBQ4BSGlvjB16k5KgAJ27CIsHY/2JBmCRReo48y9rQ3MaUzWX3KVlBa4U7MyX02HdVj0K7C3WaB3ju7FQ==
@@ -3397,11 +3397,6 @@ event-target-shim@^5.0.0, event-target-shim@^5.0.1:
   version "5.0.1"
   resolved "https://registry.yarnpkg.com/event-target-shim/-/event-target-shim-5.0.1.tgz#5d4d3ebdf9583d63a5333ce2deb7480ab2b05789"
   integrity sha512-i/2XbnSz/uxRCU6+NdVJgKWDTM427+MqYbkQzD321DuCQJUqOuJKIA0IM2+W2xtYHdKOmZ4dR6fExsd4SXL+WQ==
-
-eventemitter3@^4.0.7:
-  version "4.0.7"
-  resolved "https://registry.yarnpkg.com/eventemitter3/-/eventemitter3-4.0.7.tgz#2de9b68f6528d5644ef5c59526a1b4a07306169f"
-  integrity sha512-8guHBZCwKnFhYdHr2ysuRWErTwhoN2X8XELRlrRwpmfeY2jjuUN4taQMsULKUVo1K4DvZl+0pgfyoysHxvmvEw==
 
 events@^3.0.0, events@^3.3.0:
   version "3.3.0"
@@ -5632,7 +5627,6 @@ react-is@^17.0.1:
   dependencies:
     node-forge "^1.3.1"
     protobufjs "^7.3.0"
-    react-native-tcp-socket "file:../../../../Library/Caches/Yarn/v6/npm-react-native-androidtv-remote-1.0.1-10be9e24-08fa-48e3-b564-d1bf55cf280e-1754677681020/node_modules/react-native-androidtv-remote/react-native-tcp-socket"
 
 react-native-fs@^2.20.0:
   version "2.20.0"
@@ -5646,12 +5640,6 @@ react-native-modpow@^1.1.0:
   version "1.1.0"
   resolved "https://registry.yarnpkg.com/react-native-modpow/-/react-native-modpow-1.1.0.tgz#14867fc678daeb74ce678df15a8abc5955115e5c"
   integrity sha512-pEXAecjrp06UG2B1gy+yNuU7laoe7gjMWT63bfsH/V9lIHrwQLqQKTz073AgJsWWVBArVVC0wRI2jjqiTCf61w==
-
-"react-native-tcp-socket@file:../react-native-tcp-socket":
-  version "6.3.0-patched.1"
-  dependencies:
-    buffer "^5.4.3"
-    eventemitter3 "^4.0.7"
 
 react-native-zeroconf@^0.13.8:
   version "0.13.8"

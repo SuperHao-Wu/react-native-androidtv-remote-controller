@@ -1,5 +1,10 @@
-import TcpSockets from 'react-native-tcp-socket';
+import TcpSockets from '../tcp-socket/src/index.js';
 import { PooledTLSConnection } from './PooledTLSConnection.js';
+
+// DEBUG: Check what we're actually importing
+console.log('🔍 TLSRequestQueue: DEBUG - Imported TcpSockets object keys:', Object.keys(TcpSockets));
+console.log('🔍 TLSRequestQueue: DEBUG - TcpSockets.connectTLS type:', typeof TcpSockets.connectTLS);
+console.log('🔍 TLSRequestQueue: DEBUG - TcpSockets.connectTLS toString:', TcpSockets.connectTLS.toString().substring(0, 200));
 
 class TLSRequestQueue {
     constructor() {
@@ -134,6 +139,7 @@ class TLSRequestQueue {
 
             // CRITICAL FIX: Use callback-only approach to avoid React Native TLS event conflicts
             console.log(`🔧 TLSRequestQueue: [${requestId}] Calling TcpSockets.connectTLS...`);
+            console.log(`🔍 TLSRequestQueue: [${requestId}] DEBUG - About to call TcpSockets.connectTLS function`);
             tlsHandshakeStartTime = Date.now() - connectionStartTime;
             
             socket = TcpSockets.connectTLS(connectOptions, () => {
