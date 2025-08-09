@@ -12,7 +12,7 @@
 		"test": "jest",
 		"build:reinstall-js": "cd example && rm -rf node_modules && yarn cache clean && yarn install",
 		"build:reinstall-pod": "cd example/ios && rm -rf Pods build && rm -f Podfile.lock && pod cache clean --all && pod install",
-		"build:ios-full": "yarn babel && yarn build:reinstall-js && yarn build:reinstall-pod && cd example && yarn ios --device && cd ..",
+		"build:ios-full": "yarn babel && yarn build:reinstall-js && yarn build:reinstall-pod && cd example && npx react-native start --reset-cache & sleep 3 && yarn ios --device && cd ..",
 		"build:ios": "yarn babel && cd example && rm -rf node_modules && yarn install && cd ios && rm -rf Pods && pod install && cd .. && yarn ios --device && cd ..",
 		"debug:native-logs": "idevicesyslog | grep -E \"(TcpSocket|SSL|TLS|secureConnect|certificate|startTLS|socketDidSecure|🔧|🔐|🚦|🏊|🌐|GlobalTLSManager|TLSConnectionPool|TLSRequestQueue)\" | ts '%Y-%m-%d %H:%M:%S' > native-logs_$(date +%Y-%m-%d_%H-%M-%S).txt",
 		"debug:js-logs": "idevicesyslog | grep -E \"(TestAndroidTVRemoteApp|Console|JavaScript|🌐|🚦|🏊|PairingManager|GlobalTLSManager|TLSConnectionPool|TLSRequestQueue)\" | ts '%Y-%m-%d %H:%M:%S' > js-logs_$(date +%Y-%m-%d_%H-%M-%S).txt",
