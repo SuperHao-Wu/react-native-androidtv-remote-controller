@@ -5,24 +5,52 @@ export class CertificateGenerator {
 
     static generateFull(name) {
 
-        console.log(`Entering generateFull(${name})`);
-        console.log('modPow: ', modPow);
+        console.log(`🔧 CertificateGenerator: Entering generateFull(${name})`);
+        console.log('🔧 CertificateGenerator: modPow function available:', typeof modPow);
 
-        forge.jsbn.BigInteger.prototype.modPow = function nativeModPow(e, m) {
-            const result = modPow({
-                target: this.toString(16),
-                value: e.toString(16),
-                modifier: m.toString(16)
-            });
-
-            return new forge.jsbn.BigInteger(result, 16);
-        };
+        console.log('🔧 CertificateGenerator: TEMPORARILY DISABLING modPow override to test...');
+        // TEMPORARY: Comment out modPow override to isolate the issue
+        /*
+        // Store original modPow before overriding to prevent infinite recursion
+        const originalModPow = forge.jsbn.BigInteger.prototype.modPow;
         
+        forge.jsbn.BigInteger.prototype.modPow = function nativeModPow(e, m) {
+            console.log('🔧 CertificateGenerator: nativeModPow called with:', typeof e, typeof m);
+            try {
+                const result = modPow({
+                    target: this.toString(16),
+                    value: e.toString(16),
+                    modifier: m.toString(16)
+                });
+                console.log('🔧 CertificateGenerator: modPow result type:', typeof result);
+                return new forge.jsbn.BigInteger(result, 16);
+            } catch (error) {
+                console.log('🔧 CertificateGenerator: modPow error:', error.message);
+                // Fallback to original forge modPow if native fails
+                return originalModPow.call(this, e, m);
+            }
+        };
+        */
+        
+        console.log('🔧 CertificateGenerator: Creating date objects...');
         let date = new Date();
         date.setUTCFullYear(2021);
         let date2 = new Date();
         date2.setUTCFullYear(2099);
-        let keys = forge.pki.rsa.generateKeyPair(2048);
+        
+        console.log('🔧 CertificateGenerator: About to generate RSA key pair...');
+        console.log('🔧 CertificateGenerator: forge version check:', forge.version || 'unknown');
+        let keys;
+        try {
+            keys = forge.pki.rsa.generateKeyPair(2048);
+            console.log('🔧 CertificateGenerator: RSA key pair generated successfully');
+        } catch (error) {
+            console.log('🔧 CertificateGenerator: RSA key generation failed:', error.message);
+            console.log('🔧 CertificateGenerator: Error stack (first 500 chars):', error.stack?.substring(0, 500));
+            throw error;
+        }
+        
+        console.log('🔧 CertificateGenerator: Creating certificate...');
         let cert = forge.pki.createCertificate();
         cert.publicKey = keys.publicKey;
         cert.serialNumber = '01' + forge.util.bytesToHex(forge.random.getBytesSync(19));
