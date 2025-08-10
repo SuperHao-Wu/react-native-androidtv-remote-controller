@@ -183,8 +183,12 @@ NSString *const RCTTCPErrorDomain = @"RCTTCPErrorDomain";
 }
 
 - (void)startTLS:(NSDictionary *)tlsOptions {
-    if (_tls)
+    NSLog(@"🔧 startTLS: Starting TLS handshake for client %@", _id);
+    if (_tls) {
+        NSLog(@"⚠️ startTLS: TLS already enabled, returning early");
         return;
+    }
+    NSLog(@"🔧 startTLS: Creating TLS settings dictionary");
     NSMutableDictionary *settings = [NSMutableDictionary dictionary];
     _resolvableCaCert = [self getResolvableOption:tlsOptions forKey:@"ca"];
     BOOL checkValidity = (tlsOptions[@"rejectUnauthorized"]
@@ -214,42 +218,90 @@ NSString *const RCTTCPErrorDomain = @"RCTTCPErrorDomain";
     NSString *certAlias = tlsOptions[@"certAlias"];
     if (certAlias) { [settings setObject:certAlias forKey:@"certAlias"]; }
     
+    // 🔍 CERTIFICATE AUTHENTICATION PATH LOGGING
+    NSLog(@"🔐 startTLS: Certificate authentication analysis for client %@", _id);
+    NSLog(@"🔐 startTLS: certAlias='%@', keyAlias='%@'", certAlias, keyAlias);
+    NSLog(@"🔐 startTLS: resolvableCert=%@, resolvableKey=%@", resolvableCert ? @"present" : @"nil", resolvableKey ? @"present" : @"nil");
+    
     // if user provides certAlias without cert it means an identity(cert+key) has already been
     //  inserted in keychain.
     if ((certAlias && certAlias.length > 0) && (!resolvableCert)) {
-        //RCTLogWarn(@"startTLS: Trying to find existing identity with certAlias %@", certAlias);
+        NSLog(@"🔐 startTLS: PATH A - Using Android Keystore lookup with certAlias '%@'", certAlias);
         NSDictionary *identityQuery = @{
             (__bridge id)kSecClass : (__bridge id)kSecClassIdentity,
             (__bridge id)kSecReturnRef : @YES,
             (__bridge id)kSecAttrLabel : certAlias
         };
-        SecItemCopyMatching((__bridge CFDictionaryRef)identityQuery, (CFTypeRef *)&myIdent);
+        OSStatus keystoreResult = SecItemCopyMatching((__bridge CFDictionaryRef)identityQuery, (CFTypeRef *)&myIdent);
+        NSLog(@"🔐 startTLS: Keystore lookup result: %d, identity found: %@", (int)keystoreResult, myIdent ? @"YES" : @"NO");
         
     } else if (resolvableCert != nil && resolvableKey != nil) {
-        //RCTLogWarn(@"startTLS: Attempting client certificate authentication");
+        NSLog(@"🔐 startTLS: PATH B - Using PEM cert/key strings (in-memory certificates)");
         NSString *pemCert = [resolvableCert resolve];
         NSString *pemKey = [resolvableKey resolve];
+        
+        NSLog(@"🔐 startTLS: PEM cert resolution: %@", pemCert ? @"SUCCESS" : @"FAILED");
+        NSLog(@"🔐 startTLS: PEM key resolution: %@", pemKey ? @"SUCCESS" : @"FAILED");
+        
         if (pemCert && pemKey) {
+            NSLog(@"🔐 startTLS: PEM cert length: %lu chars", (unsigned long)pemCert.length);
+            NSLog(@"🔐 startTLS: PEM key length: %lu chars", (unsigned long)pemKey.length);
+            NSLog(@"🔐 startTLS: PEM cert preview: %.100s...", [pemCert UTF8String]);
+            NSLog(@"🔐 startTLS: Calling createIdentityWithCert...");
+            
             myIdent = [self createIdentityWithCert:pemCert
                                         privateKey:pemKey
                                           settings:settings];
-            //RCTLogWarn(@"startTLS: Identity creation %@", myIdent ? @"successful" : @"failed");
+            NSLog(@"🔐 startTLS: Identity creation result: %@", myIdent ? @"SUCCESS" : @"FAILED");
+        } else {
+            NSLog(@"❌ startTLS: PEM cert/key resolution failed - cannot create identity");
         }
+    } else {
+        NSLog(@"❌ startTLS: PATH C - No certificate authentication configured");
+        NSLog(@"❌ startTLS: This will likely cause TLS handshake failure with Sony TV");
     }
     
+    // 🔐 FINAL IDENTITY CONFIGURATION
     if (myIdent) {
-        if (_clientIdentity) { CFRelease(_clientIdentity); }
+        NSLog(@"✅ startTLS: Client identity obtained successfully - configuring for TLS");
+        if (_clientIdentity) { 
+            NSLog(@"🔐 startTLS: Releasing previous client identity");
+            CFRelease(_clientIdentity); 
+        }
         _clientIdentity = (SecIdentityRef)CFRetain(myIdent);
         
         NSArray *myCerts = @[ (__bridge id)myIdent ];
         [settings setObject:myCerts
                      forKey:(NSString *)kCFStreamSSLCertificates];
-        //RCTLogWarn(@"startTLS: Client certificates configured successfully");
+        NSLog(@"✅ startTLS: Client certificates configured successfully in TLS settings");
+    } else {
+        NSLog(@"❌ startTLS: CRITICAL - No client identity available for TLS handshake");
+        NSLog(@"❌ startTLS: Sony TV will likely reject connection due to missing client certificate");
     }
 
-    //RCTLogWarn(@"startTLS: Final settings: %@", settings);
+    NSLog(@"🔧 startTLS: Final TLS settings configured: %@", settings);
+    NSLog(@"🔧 startTLS: Setting _tls flag to true and calling [_tcpSocket startTLS]");
     _tls = true;
     [_tcpSocket startTLS:settings];
+    NSLog(@"🔧 startTLS: Called [_tcpSocket startTLS], waiting for socketDidSecure callback");
+}
+
+- (BOOL)isTLS {
+    return _tls;
+}
+
+- (BOOL)isTLSActuallyReady {
+    // Check multiple conditions for true TLS readiness with detailed logging
+    BOOL tlsFlag = _tls;
+    BOOL hasSocket = _tcpSocket != nil;
+    BOOL isConnected = _tcpSocket && [_tcpSocket isConnected];
+    BOOL isSecure = _tcpSocket && [_tcpSocket isSecure];
+    BOOL notConnecting = !_connecting;
+    
+    NSLog(@"TLS Readiness Check - _tls:%d, hasSocket:%d, isConnected:%d, isSecure:%d, notConnecting:%d", 
+          tlsFlag, hasSocket, isConnected, isSecure, notConnecting);
+    
+    return tlsFlag && hasSocket && isConnected && isSecure && notConnecting;
 }
 
 - (NSDictionary<NSString *, id> *)getAddress {
@@ -482,19 +534,27 @@ NSString *const RCTTCPErrorDomain = @"RCTTCPErrorDomain";
 }
 
 - (void)socketDidSecure:(GCDAsyncSocket *)sock {
+    NSLog(@"🔐 socketDidSecure: TLS handshake completed successfully for client %@", _id);
+    NSLog(@"🔐 socketDidSecure: Socket isSecure: %d, isConnected: %d", [sock isSecure], [sock isConnected]);
+    
     // Only for TLS
     if (!_clientDelegate) {
+        NSLog(@"❌ socketDidSecure: ERROR - nil clientDelegate for %@", [sock userData]);
         RCTLogWarn(@"socketDidSecure with nil clientDelegate for %@",
                    [sock userData]);
         return;
     }
+    
+    // Set TLS flag BEFORE emitting events to ensure readiness checks work
+    _tls = true;
+    NSLog(@"🔐 socketDidSecure: _tls flag set to true, socket isSecure: %d", [sock isSecure]);
+    
     if (_serverId != nil) {
         [_clientDelegate onSecureConnection:self toClient:_serverId];
     } else if (_connecting) {
         [_clientDelegate onConnect:self];
         _connecting = false;
     }
-    _tls = true;
 }
 
 - (void)socket:(GCDAsyncSocket *)sock

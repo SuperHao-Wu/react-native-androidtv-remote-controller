@@ -21,7 +21,7 @@ RCT_EXPORT_MODULE()
 
 - (NSArray<NSString *> *)supportedEvents {
     return @[
-        @"connect", @"listening", @"connection", @"secureConnection", @"data",
+        @"connect", @"listening", @"connection", @"secureConnection", @"secureConnect", @"data",
         @"close", @"error", @"written"
     ];
 }
@@ -209,6 +209,19 @@ RCT_EXPORT_METHOD(getCertificate:(nonnull NSNumber *)cId
     resolve(cert ?: [NSNull null]);
 }
 
+RCT_EXPORT_METHOD(isTLSReady:(nonnull NSNumber *)cId
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject) {
+    TcpSocketClient *client = [self findClient:cId];
+    if (!client) {
+        reject(@"NOT_FOUND", @"Socket not found", nil);
+        return;
+    }
+    
+    BOOL isReady = [client isTLSActuallyReady];
+    resolve(@(isReady));
+}
+
 - (void)onWrittenData:(TcpSocketClient *)client msgId:(NSNumber *)msgId {
     [self sendEventWithName:@"written"
                        body:@{
@@ -219,7 +232,18 @@ RCT_EXPORT_METHOD(getCertificate:(nonnull NSNumber *)cId
 
 - (void)onConnect:(TcpSocketClient *)client {
     GCDAsyncSocket *socket = [client getSocket];
-    [self sendEventWithName:@"connect"
+    
+    // CRITICAL FIX: Emit correct event based on connection type
+    NSString *eventName;
+    if (client.isTLS) {
+        eventName = @"secureConnect";
+        NSLog(@"🔐 TcpSockets.onConnect: Emitting secureConnect event for TLS client %@", client.id);
+    } else {
+        eventName = @"connect";
+        NSLog(@"🔧 TcpSockets.onConnect: Emitting connect event for TCP client %@", client.id);
+    }
+    
+    [self sendEventWithName:eventName
                        body:@{
                            @"id" : client.id,
                            @"connection" : @{
