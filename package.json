@@ -64,7 +64,8 @@
 		"jest": "^30.0.4",
 		"react-native-modpow": "^1.1.0",
 		"selfsigned": "^3.0.0",
-		"webdriverio": "^9.18.4"
+		"webdriverio": "^9.18.4",
+		"protobufjs": "^7.4.0"
 	},
 	"type": "commonjs",
 	"homepage": "https://github.com/vricosti/react-native-androidtv-remote",
