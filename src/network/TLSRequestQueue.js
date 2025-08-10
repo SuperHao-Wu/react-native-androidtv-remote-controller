@@ -1,4 +1,4 @@
-import TcpSockets from '../tcp-socket/src/index.js';
+import TcpSockets from 'react-native-tcp-socket';
 import { PooledTLSConnection } from './PooledTLSConnection.js';
 
 // DEBUG: Check what we're actually importing

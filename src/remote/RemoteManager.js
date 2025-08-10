@@ -1,7 +1,7 @@
 import { RemoteMessageManager } from "./RemoteMessageManager.js";
 import EventEmitter from "events";
 import {Buffer} from "buffer";
-import TcpSockets from '../tcp-socket/src/index.js';
+import TcpSockets from 'react-native-tcp-socket';
 
 
 class RemoteManager extends EventEmitter {
