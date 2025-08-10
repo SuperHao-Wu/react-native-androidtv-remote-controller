@@ -23,6 +23,7 @@ export default class TLSSocket extends Socket {
      */
     constructor(socket, options = {}) {
         super();
+        console.log(`🔧 TLSSocket.constructor: Creating TLS socket for underlying socket ${socket._id}`);
         /** @private */
         this._options = { ...options };
         TLSSocket.resolveAssetIfNeeded(this._options, 'ca');
@@ -33,15 +34,87 @@ export default class TLSSocket extends Socket {
         this._socket = socket;
         // @ts-ignore
         this._setId(this._socket._id);
+        
+        /** @private */
+        this._tlsConnectCallback = null;
+        this._tlsHandshakeComplete = false;
+        this._tlsTimeout = null;
+        
+        console.log(`🔧 TLSSocket.constructor: TLS socket ${this._id} created, setting up TLS event handling`);
+        this._setupTLSEventHandling();
         this._startTLS();
-        if (socket.pending || socket.connecting) socket.once('connect', () => this._initialize());
-        else this._initialize();
+        this._startTLSTimeout();
+        if (socket.pending || socket.connecting) {
+            console.log(`🔧 TLSSocket.constructor: Socket ${this._id} is pending/connecting, waiting for connect event`);
+            socket.once('connect', () => this._initialize());
+        } else {
+            console.log(`🔧 TLSSocket.constructor: Socket ${this._id} already connected, initializing immediately`);
+            this._initialize();
+        }
+    }
+
+    /**
+     * @private
+     */
+    _setupTLSEventHandling() {
+        console.log(`🔧 TLSSocket._setupTLSEventHandling: Setting up native TLS event listeners for socket ${this._id}`);
+        
+        // Listen for the REAL secureConnect event from native layer
+        this._secureConnectListener = this._eventEmitter.addListener('secureConnect', (evt) => {
+            if (evt.id !== this._id) return;
+            console.log(`🔐 TLSSocket._setupTLSEventHandling: Native secureConnect event received for socket ${this._id}`);
+            console.log(`🔐 TLSSocket._setupTLSEventHandling: TLS handshake completed successfully`);
+            
+            this._tlsHandshakeComplete = true;
+            
+            // Clear timeout since handshake completed
+            if (this._tlsTimeout) {
+                clearTimeout(this._tlsTimeout);
+                this._tlsTimeout = null;
+                console.log(`🔐 TLSSocket._setupTLSEventHandling: Cleared TLS timeout for socket ${this._id}`);
+            }
+            
+            // Fire the stored callback if it exists
+            if (this._tlsConnectCallback) {
+                console.log(`🔐 TLSSocket._setupTLSEventHandling: Calling stored TLS connect callback for socket ${this._id}`);
+                this._tlsConnectCallback();
+                this._tlsConnectCallback = null; // Clear after calling
+            }
+            
+            // Also emit the event for any other listeners
+            this.emit('secureConnect');
+        });
+    }
+
+    /**
+     * @private
+     */
+    _startTLSTimeout() {
+        console.log(`🔧 TLSSocket._startTLSTimeout: Starting 10-second TLS handshake timeout for socket ${this._id}`);
+        
+        this._tlsTimeout = setTimeout(() => {
+            if (this._tlsHandshakeComplete) return; // Already completed
+            
+            console.error(`❌ TLSSocket._startTLSTimeout: TLS handshake timeout after 10 seconds for socket ${this._id}`);
+            console.error(`❌ TLSSocket._startTLSTimeout: Native socketDidSecure callback never fired`);
+            
+            // Fire callback with error if it exists
+            if (this._tlsConnectCallback) {
+                console.error(`❌ TLSSocket._startTLSTimeout: Calling stored callback with timeout error for socket ${this._id}`);
+                const timeoutError = new Error('TLS handshake timeout - socketDidSecure callback never fired');
+                this._tlsConnectCallback = null; // Clear callback
+                this.emit('error', timeoutError);
+            }
+            
+            this._tlsTimeout = null;
+        }, 10000); // 10 second timeout
     }
 
     /**
      * @private
      */
     _initialize() {
+        console.log(`🔧 TLSSocket._initialize: Initializing TLS socket ${this._id}`);
         // Avoid calling twice destroy() if an error occurs
         this._socket._errorListener?.remove();
         this.on('error', (error) => this._socket.emit('error', error));
@@ -63,7 +136,9 @@ export default class TLSSocket extends Socket {
      * @private
      */
     _startTLS() {
+        console.log(`🔧 TLSSocket._startTLS: Starting TLS for socket ${this._id} with options:`, this._options);
         Sockets.startTLS(this._id, this._options);
+        console.log(`🔧 TLSSocket._startTLS: Called native startTLS for socket ${this._id}`);
     }
 
     /**
@@ -88,6 +163,14 @@ export default class TLSSocket extends Socket {
 
     getPeerCertificate() {
         return Sockets.getPeerCertificate(this._id);
+    }
+
+    /**
+     * Check if TLS connection is actually ready and secure
+     * @returns {Promise<boolean>} Promise resolving to true if TLS is ready
+     */
+    isTLSReady() {
+        return Sockets.isTLSReady(this._id);
     }
 
     /**
