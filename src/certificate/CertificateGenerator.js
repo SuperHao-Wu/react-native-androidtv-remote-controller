@@ -58,6 +58,29 @@ export class CertificateGenerator {
             key : forge.pki.privateKeyToPem(keys.privateKey),
         };
         
+        // Add comprehensive certificate debugging
+        console.log('🔍 CertificateGenerator: Generated Certificate Analysis:');
+        console.log('🔍 CertificateGenerator: Subject:', cert.subject.getField('CN')?.value || 'No CN found');
+        console.log('🔍 CertificateGenerator: Issuer:', cert.issuer.getField('CN')?.value || 'No CN found');
+        console.log('🔍 CertificateGenerator: Serial Number:', cert.serialNumber);
+        console.log('🔍 CertificateGenerator: Valid From:', cert.validity.notBefore.toISOString());
+        console.log('🔍 CertificateGenerator: Valid To:', cert.validity.notAfter.toISOString());
+        console.log('🔍 CertificateGenerator: Signature Algorithm:', cert.siginfo.algorithmOid);
+        console.log('🔍 CertificateGenerator: Public Key Algorithm:', cert.publicKey.n ? 'RSA' : 'Unknown');
+        console.log('🔍 CertificateGenerator: Extensions Count:', cert.extensions.length);
+        
+        if (cert.extensions.length > 0) {
+            console.log('🔍 CertificateGenerator: Certificate Extensions:');
+            cert.extensions.forEach((ext, index) => {
+                console.log(`🔍 CertificateGenerator: Extension ${index + 1}: ${ext.name} (OID: ${ext.id}, Critical: ${ext.critical})`);
+            });
+        }
+        
+        // Log certificate sizes for debugging
+        console.log('🔍 CertificateGenerator: Certificate PEM size:', result.cert.length, 'bytes');
+        console.log('🔍 CertificateGenerator: Private key PEM size:', result.key.length, 'bytes');
+        console.log('🔍 CertificateGenerator: Certificate PEM preview:', result.cert.substring(0, 100) + '...');
+        
         console.log('🔧 CertificateGenerator: Exiting generateFull - SUCCESS');
 
         return result;
