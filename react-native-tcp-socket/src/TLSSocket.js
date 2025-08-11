@@ -24,6 +24,13 @@ export default class TLSSocket extends Socket {
     constructor(socket, options = {}) {
         super();
         console.log(`🔧 TLSSocket.constructor: Creating TLS socket for underlying socket ${socket._id}`);
+        
+        // DIAGNOSTIC: Log initial state from underlying socket
+        console.log(`🔍 DIAGNOSTIC: TLSSocket constructor - underlying socket ${socket._id} state:`);
+        console.log(`🔍 DIAGNOSTIC: socket._pending: ${socket._pending}, socket._connecting: ${socket._connecting}`);
+        console.log(`🔍 DIAGNOSTIC: socket._readyState: ${socket._readyState}, socket._destroyed: ${socket._destroyed}`);
+        console.log(`🔍 DIAGNOSTIC: socket.pending: ${socket.pending}, socket.connecting: ${socket.connecting}`);
+        
         /** @private */
         this._options = { ...options };
         TLSSocket.resolveAssetIfNeeded(this._options, 'ca');
@@ -34,6 +41,11 @@ export default class TLSSocket extends Socket {
         this._socket = socket;
         // @ts-ignore
         this._setId(this._socket._id);
+        
+        // DIAGNOSTIC: Log TLS socket state after _setId
+        console.log(`🔍 DIAGNOSTIC: TLSSocket ${this._id} state after _setId:`);
+        console.log(`🔍 DIAGNOSTIC: this._pending: ${this._pending}, this._connecting: ${this._connecting}`);
+        console.log(`🔍 DIAGNOSTIC: this._readyState: ${this._readyState}, this._destroyed: ${this._destroyed}`);
         
         /** @private */
         this._tlsConnectCallback = null;
@@ -65,7 +77,22 @@ export default class TLSSocket extends Socket {
             console.log(`🔐 TLSSocket._setupTLSEventHandling: Native secureConnect event received for socket ${this._id}`);
             console.log(`🔐 TLSSocket._setupTLSEventHandling: TLS handshake completed successfully`);
             
+            // DIAGNOSTIC: Log socket state before and after secureConnect
+            console.log(`🔍 DIAGNOSTIC: Socket ${this._id} state BEFORE secureConnect processing:`);
+            console.log(`🔍 DIAGNOSTIC: _pending: ${this._pending}, _connecting: ${this._connecting}, _destroyed: ${this._destroyed}`);
+            console.log(`🔍 DIAGNOSTIC: _readyState: ${this._readyState}, _tlsHandshakeComplete: ${this._tlsHandshakeComplete}`);
+            
             this._tlsHandshakeComplete = true;
+            
+            // 🔧 CRITICAL FIX: Call _setConnected to set _pending = false after TLS handshake
+            console.log(`🔧 TLSSocket.secureConnect: Calling _setConnected to mark socket as ready for writes`);
+            this._setConnected({
+                localAddress: this._socket.localAddress,
+                localPort: this._socket.localPort,
+                remoteAddress: this._socket.remoteAddress,
+                remotePort: this._socket.remotePort,
+                remoteFamily: this._socket.remoteFamily,
+            });
             
             // Clear timeout since handshake completed
             if (this._tlsTimeout) {
@@ -73,6 +100,11 @@ export default class TLSSocket extends Socket {
                 this._tlsTimeout = null;
                 console.log(`🔐 TLSSocket._setupTLSEventHandling: Cleared TLS timeout for socket ${this._id}`);
             }
+            
+            // DIAGNOSTIC: Log socket state after processing
+            console.log(`🔍 DIAGNOSTIC: Socket ${this._id} state AFTER secureConnect processing:`);
+            console.log(`🔍 DIAGNOSTIC: _pending: ${this._pending}, _connecting: ${this._connecting}, _destroyed: ${this._destroyed}`);
+            console.log(`🔍 DIAGNOSTIC: _readyState: ${this._readyState}, _tlsHandshakeComplete: ${this._tlsHandshakeComplete}`);
             
             // Fire the stored callback if it exists
             if (this._tlsConnectCallback) {
@@ -115,6 +147,12 @@ export default class TLSSocket extends Socket {
      */
     _initialize() {
         console.log(`🔧 TLSSocket._initialize: Initializing TLS socket ${this._id}`);
+        
+        // DIAGNOSTIC: Log socket state before _initialize
+        console.log(`🔍 DIAGNOSTIC: Socket ${this._id} state BEFORE _initialize:`);
+        console.log(`🔍 DIAGNOSTIC: _pending: ${this._pending}, _connecting: ${this._connecting}, _destroyed: ${this._destroyed}`);
+        console.log(`🔍 DIAGNOSTIC: _readyState: ${this._readyState}, _tlsHandshakeComplete: ${this._tlsHandshakeComplete}`);
+        
         // Avoid calling twice destroy() if an error occurs
         this._socket._errorListener?.remove();
         this.on('error', (error) => this._socket.emit('error', error));
@@ -130,6 +168,11 @@ export default class TLSSocket extends Socket {
             // @ts-ignore
             remoteFamily: this._socket.remoteFamily,
         });
+        
+        // DIAGNOSTIC: Log socket state after _initialize
+        console.log(`🔍 DIAGNOSTIC: Socket ${this._id} state AFTER _initialize:`);
+        console.log(`🔍 DIAGNOSTIC: _pending: ${this._pending}, _connecting: ${this._connecting}, _destroyed: ${this._destroyed}`);
+        console.log(`🔍 DIAGNOSTIC: _readyState: ${this._readyState}, _tlsHandshakeComplete: ${this._tlsHandshakeComplete}`);
     }
 
     /**
@@ -188,5 +231,29 @@ export default class TLSSocket extends Socket {
             options.resolvedKeys.push(key);
             options[key] = Image.resolveAssetSource(source).uri;
         }
+    }
+    
+    /**
+     * Override destroy to properly clear TLS timeout
+     * @param {Error} [error] Optional error for destroy event  
+     */
+    destroy(error) {
+        console.log(`🔧 TLSSocket.destroy: Destroying TLS socket ${this._id} and clearing timeouts`);
+        
+        // Clear TLS timeout if it exists
+        if (this._tlsTimeout) {
+            clearTimeout(this._tlsTimeout);
+            this._tlsTimeout = null;
+            console.log(`🔧 TLSSocket.destroy: Cleared TLS timeout for socket ${this._id}`);
+        }
+        
+        // Clear callback to prevent it from firing after destroy
+        if (this._tlsConnectCallback) {
+            console.log(`🔧 TLSSocket.destroy: Clearing TLS connect callback for socket ${this._id}`);
+            this._tlsConnectCallback = null;
+        }
+        
+        // Call parent destroy method
+        return super.destroy(error);
     }
 }

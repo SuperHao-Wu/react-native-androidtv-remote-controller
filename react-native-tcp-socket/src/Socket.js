@@ -140,6 +140,10 @@ export default class Socket extends EventEmitter {
      * @param {NativeConnectionInfo} connectionInfo
      */
     _setConnected(connectionInfo) {
+        // DIAGNOSTIC: Log state before _setConnected
+        console.log(`🔍 DIAGNOSTIC: Socket ${this._id} _setConnected() called:`);
+        console.log(`🔍 DIAGNOSTIC: State BEFORE _setConnected: _pending: ${this._pending}, _connecting: ${this._connecting}, _readyState: ${this._readyState}`);
+        
         this._connecting = false;
         this._readyState = 'open';
         this._pending = false;
@@ -148,6 +152,10 @@ export default class Socket extends EventEmitter {
         this.remoteAddress = connectionInfo.remoteAddress;
         this.remoteFamily = connectionInfo.remoteFamily;
         this.remotePort = connectionInfo.remotePort;
+        
+        // DIAGNOSTIC: Log state after _setConnected
+        console.log(`🔍 DIAGNOSTIC: State AFTER _setConnected: _pending: ${this._pending}, _connecting: ${this._connecting}, _readyState: ${this._readyState}`);
+        console.log(`🔍 DIAGNOSTIC: Connection info: ${connectionInfo.localAddress}:${connectionInfo.localPort} -> ${connectionInfo.remoteAddress}:${connectionInfo.remotePort}`);
     }
 
     /**
@@ -328,7 +336,23 @@ export default class Socket extends EventEmitter {
      * @return {boolean}
      */
     write(buffer, encoding, cb) {
-        if (this._pending || this._destroyed) throw new Error('Socket is closed.');
+        // DIAGNOSTIC: Log detailed socket state before write attempt
+        console.log(`🔍 DIAGNOSTIC: Socket ${this._id} write() called with:`);
+        console.log(`🔍 DIAGNOSTIC: Buffer length: ${buffer?.length || 'undefined'}`);
+        console.log(`🔍 DIAGNOSTIC: Encoding: ${encoding || 'undefined'}`);
+        console.log(`🔍 DIAGNOSTIC: Socket state at write time:`);
+        console.log(`🔍 DIAGNOSTIC: _pending: ${this._pending}, _destroyed: ${this._destroyed}`);
+        console.log(`🔍 DIAGNOSTIC: _connecting: ${this._connecting}, _readyState: ${this._readyState}`);
+        console.log(`🔍 DIAGNOSTIC: _tlsHandshakeComplete: ${this._tlsHandshakeComplete || 'N/A (not TLS)'}`);
+        console.log(`🔍 DIAGNOSTIC: localAddress: ${this.localAddress}, remoteAddress: ${this.remoteAddress}`);
+        
+        if (this._pending || this._destroyed) {
+            const errorDetails = `Socket ${this._id} is closed. _pending: ${this._pending}, _destroyed: ${this._destroyed}, _readyState: ${this._readyState}`;
+            console.error(`❌ DIAGNOSTIC: ${errorDetails}`);
+            throw new Error('Socket is closed.');
+        }
+        
+        console.log(`✅ DIAGNOSTIC: Socket ${this._id} passed state checks, proceeding with write`);
 
         const generatedBuffer = this._generateSendBuffer(buffer, encoding);
         this._writeBufferSize += generatedBuffer.byteLength;
