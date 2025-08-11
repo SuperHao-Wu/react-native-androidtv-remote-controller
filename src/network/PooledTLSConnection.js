@@ -59,8 +59,20 @@ class PooledTLSConnection extends EventEmitter {
     }
     
     write(data) {
+        console.log(`🔧 PooledTLSConnection: About to write ${data.length} bytes to ${this.host}:${this.port}`);
+        console.log(`🔧 PooledTLSConnection: Socket state: destroyed=${this.socket.destroyed}, readyState=${this.socket.readyState}`);
+        console.log(`🔧 PooledTLSConnection: Data preview:`, Array.from(data.slice(0, 20)));
+        
         this.lastUsed = Date.now();
-        return this.socket.write(data);
+        
+        try {
+            const result = this.socket.write(data);
+            console.log(`🔧 PooledTLSConnection: Write result: ${result}`);
+            return result;
+        } catch (error) {
+            console.error(`🔧 PooledTLSConnection: Write error:`, error);
+            throw error;
+        }
     }
     
     destroy(error) {

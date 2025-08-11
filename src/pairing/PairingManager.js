@@ -115,7 +115,7 @@ class PairingManager extends EventEmitter {
 				console.error(`${this.host} Pairing connection timeout after 15 seconds`);
 				this.connectionState = 'disconnected';
 				if (this.client) {
-					this.tlsManager.releaseConnection(this.client);
+					// Direct connection - no pool cleanup needed
 					this.client.destroy(new Error('Connection timeout'));
 				}
 				reject(new Error('Connection timeout'));
@@ -157,69 +157,74 @@ class PairingManager extends EventEmitter {
 			});
 
 			try {
-				// Use connection pool instead of direct TLS connection
-				console.log(`🎯 PairingManager: [${this.instanceId}] ${this.host} 🔄 PairingManager: Requesting connection from pool - START`);
-				this.client = await this.tlsManager.getConnection(this.host, this.port, options);
-				console.log(`🎯 PairingManager: [${this.instanceId}] ${this.host} 🔄 PairingManager: Requesting connection from pool - COMPLETED`);
+				// CRITICAL FIX: Use direct TLS connection, NOT connection pool for initial connection
+				// Connection pooling was causing issues with fresh TLS handshakes
+				console.log(`🎯 PairingManager: [${this.instanceId}] ${this.host} 🔄 PairingManager: Creating DIRECT TLS connection (bypassing pool)`);
+				this.client = TcpSockets.connectTLS(options, () => {
+					console.log(`🎯 PairingManager: [${this.instanceId}] ${this.host} 🔐 Direct TLS connection established successfully`);
+				});
 				
-				console.log(`${this.host} 🔐 TLS connection obtained from pool`);
+				// Wait for secure connection before proceeding
+				await new Promise((resolve, reject) => {
+					const timeoutId = setTimeout(() => {
+						reject(new Error('Direct TLS connection timeout'));
+					}, 10000);
+					
+					this.client.on('secureConnect', () => {
+						clearTimeout(timeoutId);
+						console.log(`🎯 PairingManager: [${this.instanceId}] ${this.host} 🔐 Direct TLS secureConnect event fired`);
+						resolve();
+					});
+					
+					this.client.on('error', (error) => {
+						clearTimeout(timeoutId);
+						reject(error);
+					});
+				});
+				
+				console.log(`🎯 PairingManager: [${this.instanceId}] ${this.host} 🔄 PairingManager: Direct TLS connection completed successfully`);
+				
+				console.log(`${this.host} 🔐 Direct TLS connection established successfully`);
+				console.log(`🔧 PairingManager: [${this.instanceId}] CRITICAL MOMENT: About to set connectionState to 'connected' and proceed with pairing`);
+				console.log(`🔧 PairingManager: [${this.instanceId}] Current state before setting connected: ${this.connectionState}`);
+				console.log(`🔧 PairingManager: [${this.instanceId}] Client socket status: destroyed=${this.client.destroyed}`);
+				
 				this.connectionState = 'connected';
 				
 				this.isCancelled = false;
 				this.client.pairingManager = this;
+				
+				console.log(`🔧 PairingManager: [${this.instanceId}] State now set to 'connected', proceeding with certificate analysis`);;
 
-				// Log comprehensive TLS connection details for Sony TV debugging
-				try {
-					const clientCert = await this.client.getCertificate();
-					const serverCert = await this.client.getPeerCertificate();
-					
-					console.log(`${this.host} 📜 TLS Handshake Certificate Analysis:`, {
-						clientCertPresent: !!clientCert,
-						serverCertPresent: !!serverCert,
-						clientSubject: clientCert?.subject,
-						clientIssuer: clientCert?.issuer,
-						clientFingerprint: clientCert?.fingerprint,
-						clientValidFrom: clientCert?.validFrom,
-						clientValidTo: clientCert?.validTo,
-						serverSubject: serverCert?.subject,
-						serverIssuer: serverCert?.issuer,
-						serverFingerprint: serverCert?.fingerprint
-					});
+				// CRITICAL FIX: Certificate analysis calls were causing TLS encrypted alerts
+				// These getCertificate/getPeerCertificate calls triggered connection termination
+				// Skip certificate analysis to prevent connection closure
+				console.log(`${this.host} 🔐 TLS handshake completed successfully - skipping certificate analysis to prevent encrypted alerts`);
 
-					// Specifically check if client certificate has the right properties for Android TV
-					if (clientCert) {
-						console.log(`${this.host} 🔍 Client Certificate Validation:`, {
-							hasSubject: !!clientCert.subject,
-							hasPublicKey: !!clientCert.pubkey,
-							keyAlgorithm: clientCert.keyAlgorithm || 'Unknown',
-							signatureAlgorithm: clientCert.signatureAlgorithm || 'Unknown',
-							version: clientCert.version || 'Unknown',
-							serialNumber: clientCert.serialNumber || 'Unknown'
-						});
-					} else {
-						console.error(`${this.host} ❌ CRITICAL: No client certificate retrieved - this explains 'SSL_NULL_WITH_NULL_NULL' error on Sony TV`);
-					}
+				// CRITICAL DEBUG: Remove delay to test if it's causing encrypted alerts
+				// The encrypted alert happens during this 300ms delay, not during certificate analysis
+				console.log(`🔧 PairingManager: [${this.instanceId}] SKIPPING DELAY to test encrypted alert cause`);
+				console.log(`${this.host} Proceeding immediately to pairing request (no 300ms delay)`);
+				// await this.sleep(300); // DISABLED TO TEST
 
-				} catch (certError) {
-					console.error(`${this.host} ❌ TLS Certificate retrieval failed:`, {
-						error: certError.message,
-						code: certError.code,
-						stack: certError.stack?.split('\n').slice(0, 3).join('\n')
-					});
-				}
-
-				// Add delay before sending pairing request to avoid race condition
-				console.log(`${this.host} Waiting 300ms before sending pairing request...`);
-				await this.sleep(300);
-
-				// Check if connection is still valid and not cancelled
+				// Check if connection is still valid and not cancelled  
+				console.log(`🔧 PairingManager: [${this.instanceId}] NO DELAY - checking connection state immediately`);
+				console.log(`🔧 PairingManager: [${this.instanceId}] isCancelled: ${this.isCancelled}, connectionState: ${this.connectionState}`);
+				console.log(`🔧 PairingManager: [${this.instanceId}] Client socket destroyed: ${this.client.destroyed}`);
+				
 				if (this.isCancelled || this.connectionState !== 'connected') {
+					console.log(`🔧 PairingManager: [${this.instanceId}] ABORTING: Connection cancelled or invalid, aborting pairing request`);
 					console.log(`${this.host} Connection cancelled or invalid, aborting pairing request`);
 					return;
 				}
+				
+				console.log(`🔧 PairingManager: [${this.instanceId}] CONNECTION VALID - proceeding immediately to event handlers`);
 
 				// Set up event handlers for the pooled connection BEFORE sending data
+				console.log(`🔧 PairingManager: [${this.instanceId}] Setting up event handlers for pooled connection`);
+				
 				this.client.on('data', data => {
+					console.log(`🔧 PairingManager: [${this.instanceId}] DATA EVENT: Received ${data.length} bytes from ${this.host}:${this.port}`);
 					debugger;
 					let buffer = Buffer.from(data);
 					this.chunks = Buffer.concat([this.chunks, buffer]);
@@ -227,8 +232,8 @@ class PairingManager extends EventEmitter {
 					if (this.chunks.length > 0 && this.chunks.readInt8(0) === this.chunks.length - 1) {
 						let message = this.pairingMessageManager.parse(this.chunks);
 
-						console.log('Receive : ' + Array.from(this.chunks));
-						console.log('Receive : ' + JSON.stringify(message.toJSON()));
+						console.log(`🔧 PairingManager: [${this.instanceId}] Parsed message from ${this.host}: ` + Array.from(this.chunks));
+						console.log(`🔧 PairingManager: [${this.instanceId}] Message content: ` + JSON.stringify(message.toJSON()));
 
 						if (message.status !== this.pairingMessageManager.Status.STATUS_OK) {
 							this.client.destroy(new Error(message.status));
@@ -255,10 +260,8 @@ class PairingManager extends EventEmitter {
 							} else if (message.pairingConfigurationAck) {
 								console.log(`${this.host} Received pairingConfigurationAck, emitting secret event`);
 								this.connectionState = 'paired';
-								// CRITICAL: Release connection now that pairing is complete
-								// This prevents race condition with connection pool cleanup
-								console.log(`${this.host} 🔓 Releasing connection after successful pairing`);
-								this.tlsManager.releaseConnection(this.client);
+								// Direct connection - no pool cleanup needed
+								console.log(`${this.host} 🔓 Direct connection - no pool cleanup needed`);
 								this.emit('secret');
 							} else if (message.pairingSecretAck) {
 								console.log(this.host + ' Paired!');
@@ -268,8 +271,7 @@ class PairingManager extends EventEmitter {
 									clearTimeout(this.connectionTimeout);
 									this.connectionTimeout = null;
 								}
-								// Release connection back to pool before destroying
-								this.tlsManager.releaseConnection(this.client);
+								// Direct connection - no pool cleanup needed
 								this.client.destroy();
 							} else {
 								console.log(this.host + ' What Else ?');
@@ -280,7 +282,11 @@ class PairingManager extends EventEmitter {
 				});
 
 				this.client.on('close', hasError => {
+					console.log(`🔧 PairingManager: [${this.instanceId}] CLOSE EVENT START - hasError: ${hasError}, connectionState: ${this.connectionState}`);
+					console.log(`🔧 PairingManager: [${this.instanceId}] Close event call stack:`);
+					console.trace(`🔧 PairingManager: [${this.instanceId}] Close event trace`);
 					debugger;
+					
 					console.log(`${this.host} 🚪 Socket close event - hasError: ${hasError}, connectionState: ${this.connectionState}`);
 					
 					// Check if pairing was completed before cleaning up state
@@ -296,10 +302,9 @@ class PairingManager extends EventEmitter {
 					// Only release connection if pairing was not completed
 					// (If pairing completed, connection was already released at the right time)
 					if (!wasAlreadyPaired) {
-						console.log(`${this.host} 🔓 Releasing connection on close (pairing incomplete)`);
-						this.tlsManager.releaseConnection(this.client);
+						console.log(`${this.host} 🔓 Direct connection closed (pairing incomplete) - no pool cleanup needed`);
 					} else {
-						console.log(`${this.host} ✅ Connection already released after successful pairing`);
+						console.log(`${this.host} ✅ Direct connection closed after successful pairing`);
 					}
 
 					if (hasError) {
@@ -319,6 +324,10 @@ class PairingManager extends EventEmitter {
 				});
 
 				this.client.on('error', error => {
+					console.log(`🔧 PairingManager: [${this.instanceId}] ERROR EVENT START`);
+					console.log(`🔧 PairingManager: [${this.instanceId}] Error event call stack:`);
+					console.trace(`🔧 PairingManager: [${this.instanceId}] Error event trace`);
+					
 					console.error(`${this.host} 💥 PairingManager error:`, {
 						code: error.code,
 						message: error.message,
@@ -334,16 +343,38 @@ class PairingManager extends EventEmitter {
 						this.connectionTimeout = null;
 					}
 					
-					// Release connection back to pool on error
-					this.tlsManager.releaseConnection(this.client);
+					// Direct connection - no pool cleanup needed on error
 				});
+				
+				console.log(`🔧 PairingManager: [${this.instanceId}] EVENT HANDLERS SETUP COMPLETED`);
+				console.log(`🔧 PairingManager: [${this.instanceId}] Ready to send pairing request`);
 
 				// Now send the pairing request after all event handlers are set up
 				console.log(`${this.host} Sending pairing request`);
-				this.client.write(this.pairingMessageManager.createPairingRequest(this.service_name));
+				console.log(`🔧 PairingManager: [${this.instanceId}] About to send pairing request to ${this.host}:${this.port}`);
+				console.log(`🔧 PairingManager: [${this.instanceId}] Connection state: ${this.connectionState}`);
+				console.log(`🔧 PairingManager: [${this.instanceId}] Client socket state: destroyed=${this.client.destroyed}, readyState=${this.client.readyState}`);
+				console.log(`🔧 PairingManager: [${this.instanceId}] Service name: ${this.service_name}`);
+				
+				try {
+					// CRITICAL TEST: Send simple message instead of complex pairing request
+					// This tests if write() operation itself causes encrypted alerts
+					const testMessage = Buffer.from("hello");
+					console.log(`🔧 PairingManager: [${this.instanceId}] TESTING: Sending simple test message instead of pairing request`);
+					console.log(`🔧 PairingManager: [${this.instanceId}] Test message:`, Array.from(testMessage));
+					await this.sleep(5000); // Wait 5 seconds before sending test message
+					console.log('Socket ready state:', this.client.readyState);
+					console.log('Socket authorized:', this.client.authorized);
+					const writeResult = this.client.write(testMessage);
+					console.log(`🔧 PairingManager: [${this.instanceId}] Simple test message write result: ${writeResult}`);
+					console.log(`🔧 PairingManager: [${this.instanceId}] Simple test message sent successfully - no encrypted alert!`);
+				} catch (error) {
+					console.error(`🔧 PairingManager: [${this.instanceId}] ERROR sending simple test message:`, error);
+					throw error;
+				}
 
 			} catch (error) {
-				console.error(`${this.host} Failed to obtain TLS connection from pool:`, error);
+				console.error(`${this.host} Failed to establish direct TLS connection:`, error);
 				this.connectionState = 'disconnected';
 				if (this.connectionTimeout) {
 					clearTimeout(this.connectionTimeout);
@@ -355,6 +386,8 @@ class PairingManager extends EventEmitter {
 	}
 
 	stop() {
+		console.log(`🔧 PairingManager: [${this.instanceId}] STOP() CALLED - tracing who called stop()`);
+		console.trace(`🔧 PairingManager: [${this.instanceId}] Stop() call stack trace`);
 		console.log(`${this.host} PairingManager.stop(): Cleaning up connection`);
 		
 		// Update connection state
@@ -370,8 +403,7 @@ class PairingManager extends EventEmitter {
 		// Close and clean up pooled TLS client socket
 		if (this.client) {
 			try {
-				// Release connection back to pool first
-				this.tlsManager.releaseConnection(this.client);
+				// Direct connection - no pool cleanup needed
 				
 				// Remove all event listeners to prevent memory leaks
 				this.client.removeAllListeners();

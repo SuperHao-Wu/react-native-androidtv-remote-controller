@@ -105,7 +105,7 @@ class TLSRequestQueue {
             
             let socket = null;
             let isResolved = false;
-            let tcpConnectTime = null;
+            let tcpConnectTime = 'unknown';
             let tlsHandshakeStartTime = null;
             
             // Faster timeout for retry strategy - 8 seconds should be enough for local connections
@@ -115,7 +115,7 @@ class TLSRequestQueue {
                 const totalTime = Date.now() - connectionStartTime;
                 console.error(`🔧 TLSRequestQueue: [${requestId}] === CONNECTION TIMEOUT ===`);
                 console.error(`🔧 TLSRequestQueue: [${requestId}] Timeout after ${totalTime}ms for ${host}:${port} (attempt ${attempt})`);
-                console.error(`🔧 TLSRequestQueue: [${requestId}] TCP connected: ${tcpConnectTime ? 'YES at ' + tcpConnectTime + 'ms' : 'NO'}`);
+                console.error(`🔧 TLSRequestQueue: [${requestId}] TCP connected: ${tcpConnectTime !== 'unknown' ? 'YES at ' + tcpConnectTime + 'ms' : 'NO'}`);
                 console.error(`🔧 TLSRequestQueue: [${requestId}] TLS started: ${tlsHandshakeStartTime ? 'YES at ' + tlsHandshakeStartTime + 'ms' : 'NO'}`);
                 if (socket) {
                     socket.destroy(new Error('TLS connection timeout'));
@@ -148,7 +148,7 @@ class TLSRequestQueue {
                 const secureConnectTime = Date.now() - connectionStartTime;
                 console.log(`🔧 TLSRequestQueue: [${requestId}] === TLS HANDSHAKE SUCCESS ===`);
                 console.log(`🔧 TLSRequestQueue: [${requestId}] secureConnect callback fired for ${host}:${port} (attempt ${attempt})`);
-                console.log(`🔧 TLSRequestQueue: [${requestId}] TCP connect time: ${tcpConnectTime || 'unknown'}ms`);
+                console.log(`🔧 TLSRequestQueue: [${requestId}] TCP connect time: ${tcpConnectTime}ms`);
                 console.log(`🔧 TLSRequestQueue: [${requestId}] TLS handshake time: ${secureConnectTime - (tlsHandshakeStartTime || 0)}ms`);
                 console.log(`🔧 TLSRequestQueue: [${requestId}] Total connection time: ${secureConnectTime}ms`);
                 clearTimeout(timeoutId);
@@ -187,7 +187,7 @@ class TLSRequestQueue {
                 clearTimeout(timeoutId);
                 console.error(`🔧 TLSRequestQueue: [${requestId}] === CONNECTION ERROR ===`);
                 console.error(`🔧 TLSRequestQueue: [${requestId}] Error after ${errorTime}ms for ${host}:${port} (attempt ${attempt})`);
-                console.error(`🔧 TLSRequestQueue: [${requestId}] TCP connected: ${tcpConnectTime ? 'YES at ' + tcpConnectTime + 'ms' : 'NO'}`);
+                console.error(`🔧 TLSRequestQueue: [${requestId}] TCP connected: ${tcpConnectTime !== 'unknown' ? 'YES at ' + tcpConnectTime + 'ms' : 'NO'}`);
                 console.error(`🔧 TLSRequestQueue: [${requestId}] TLS started: ${tlsHandshakeStartTime ? 'YES at ' + tlsHandshakeStartTime + 'ms' : 'NO'}`);
                 console.error(`🔧 TLSRequestQueue: [${requestId}] Error details:`, error);
                 reject(error);
