@@ -10,7 +10,7 @@
 	"scripts": {
 		"babel": "babel ./src/*.* --out-dir dist --delete-dir-on-start -D && babel ./src/certificate/*.* --out-dir dist/certificate -D && babel ./src/pairing/*.* --out-dir dist/pairing -D && babel ./src/remote/*.* --out-dir dist/remote -D && babel ./src/network/*.* --out-dir dist/network -D",
 		"test": "jest",
-		"build:reinstall-js": "cd example && rm -rf node_modules && yarn cache clean && yarn install",
+		"build:reinstall-js": "cd example && rm -rf node_modules && rm -f yarn.lock && yarn cache clean && yarn install",
 		"build:reinstall-pod": "cd example/ios && rm -rf Pods build && rm -f Podfile.lock && pod cache clean --all && pod install",
 		"start:ios": "cd example && lsof -ti:8081 | xargs kill -9 2>/dev/null; npx react-native start --port 8081 --reset-cache & sleep 3 && yarn ios --device",
 		"build:ios-full": "yarn babel && yarn build:reinstall-js && yarn build:reinstall-pod && yarn start:ios",
@@ -37,15 +37,13 @@
 	],
 	"author": "@vricosti",
 	"license": "MIT",
-	"dependencies": {},
+	"dependencies": {
+		"node-forge": "^1.3.1",
+		"protobufjs": "^7.3.0"
+	},
 	"peerDependencies": {
 		"react-native": ">=0.60.0",
-		"react-native-modpow": "^1.1.0",
-		"react-native-tcp-socket": "file:./react-native-tcp-socket",
-		"node-forge": "^1.3.1",
-		"protobufjs": "^7.4.0",
-		"eventemitter3": "^4.0.7",
-		"buffer": "^6.0.3"
+		"react-native-modpow": "^1.1.0"
 	},
 	"devDependencies": {
 		"@babel/cli": "^7.16.7",
