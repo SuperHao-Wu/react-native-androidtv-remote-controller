@@ -112,13 +112,16 @@ class TLSRequestQueue {
             const connectionStartTime = Date.now();
             
             let socket = null;
-            let socketId = 'unknown';
             let isResolved = false;
             let tcpConnectTime = 'unknown';
             let tlsHandshakeStartTime = null;
             
             // Helper function to get combined request:socket ID for logging
-            const getLogId = () => `${requestId}:${socketId}`;
+            // This dynamically gets the socket ID each time it's called
+            const getLogId = () => {
+                const currentSocketId = socket?._id || 'unknown';
+                return `${requestId}:${currentSocketId}`;
+            };
             
             console.log(`🔧 TLSRequestQueue: [${requestId}] === CREATING TLS CONNECTION ===`);
             console.log(`🔧 TLSRequestQueue: [${requestId}] Target: ${host}:${port} (attempt ${attempt})`);
@@ -175,10 +178,7 @@ class TLSRequestQueue {
                     resolve(retryConnection);
                 });
                 
-                // Extract socket ID immediately after socket creation
-                // Based on react-native-tcp-socket source: Socket._id is the correct property
-                socketId = socket._id || 'unknown';
-                console.log(`🔧 TLSRequestQueue: [${getLogId()}] Socket created with ID: ${socketId}`);
+                console.log(`🔧 TLSRequestQueue: [${getLogId()}] Socket created successfully`);
                 console.log(`🔧 TLSRequestQueue: [${getLogId()}] Calling TcpSockets.connectTLS...`);
                 console.log(`🔍 TLSRequestQueue: [${getLogId()}] DEBUG - About to call TcpSockets.connectTLS function`);
                 
@@ -202,13 +202,14 @@ class TLSRequestQueue {
                     console.error(`🔧 TLSRequestQueue: [${getLogId()}] Error code:`, error.code); // Will show TLS_HANDSHAKE_TIMEOUT
                     
                     // Immediately destroy failed socket to prevent resource leak
-                    console.error(`💥 TLSRequestQueue: [${getLogId()}] Socket ${socketId} failed - destroying immediately to prevent resource leak`);
-                    const destroyed = this._destroySocket(socket, socketId, `error: ${error.code || error.message}`);
+                    const currentSocketId = socket?._id || 'unknown';
+                    console.error(`💥 TLSRequestQueue: [${getLogId()}] Socket ${currentSocketId} failed - destroying immediately to prevent resource leak`);
+                    const destroyed = this._destroySocket(socket, currentSocketId, `error: ${error.code || error.message}`);
                     
                     if (destroyed) {
-                        console.error(`🗑️ TLSRequestQueue: [${getLogId()}] Socket ${socketId} destroyed immediately (not waiting for OS cleanup)`);
+                        console.error(`🗑️ TLSRequestQueue: [${getLogId()}] Socket ${currentSocketId} destroyed immediately (not waiting for OS cleanup)`);
                     } else {
-                        console.error(`⚠️ TLSRequestQueue: [${getLogId()}] Socket ${socketId} could not be destroyed - may cause resource leak`);
+                        console.error(`⚠️ TLSRequestQueue: [${getLogId()}] Socket ${currentSocketId} could not be destroyed - may cause resource leak`);
                     }
                     
                     reject(error);
@@ -222,10 +223,11 @@ class TLSRequestQueue {
                     console.log(`🔧 TLSRequestQueue: [${getLogId()}] Connection closed after ${closeTime}ms for ${host}:${port} (attempt ${attempt})`);
                     
                     // Check if this was a natural close vs our explicit destruction
+                    const currentSocketId = socket?._id || 'unknown';
                     if (socket.destroyed) {
-                        console.log(`ℹ️ TLSRequestQueue: [${getLogId()}] Socket ${socketId} closed after explicit destruction (expected)`);
+                        console.log(`ℹ️ TLSRequestQueue: [${getLogId()}] Socket ${currentSocketId} closed after explicit destruction (expected)`);
                     } else {
-                        console.warn(`⚠️ TLSRequestQueue: [${getLogId()}] Socket ${socketId} closed naturally without explicit destruction`);
+                        console.warn(`⚠️ TLSRequestQueue: [${getLogId()}] Socket ${currentSocketId} closed naturally without explicit destruction`);
                     }
                     
                     const closeError = new Error('TLS connection closed unexpectedly');
@@ -240,7 +242,8 @@ class TLSRequestQueue {
                 
                 // Clean up socket if it was created before the error
                 if (socket) {
-                    this._destroySocket(socket, socketId, 'creation error');
+                    const currentSocketId = socket?._id || 'unknown';
+                    this._destroySocket(socket, currentSocketId, 'creation error');
                 }
                 
                 reject(error);
