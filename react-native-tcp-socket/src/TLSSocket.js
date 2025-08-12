@@ -122,12 +122,12 @@ export default class TLSSocket extends Socket {
      * @private
      */
     _startTLSTimeout() {
-        console.log(`🔧 TLSSocket._startTLSTimeout: Starting 10-second TLS handshake timeout for socket ${this._id}`);
+        console.log(`🔧 TLSSocket._startTLSTimeout: Starting 3-second TLS handshake timeout for socket ${this._id}`);
         
         this._tlsTimeout = setTimeout(() => {
             if (this._tlsHandshakeComplete) return; // Already completed
             
-            console.error(`❌ TLSSocket._startTLSTimeout: TLS handshake timeout after 10 seconds for socket ${this._id}`);
+            console.error(`❌ TLSSocket._startTLSTimeout: TLS handshake timeout after 3 seconds for socket ${this._id}`);
             console.error(`❌ TLSSocket._startTLSTimeout: Native socketDidSecure callback never fired`);
             
             // Fire callback with error if it exists
@@ -140,7 +140,7 @@ export default class TLSSocket extends Socket {
             }
             
             this._tlsTimeout = null;
-        }, 10000); // 10 second timeout
+        }, 3000); // 3 second timeout (fast failures for retry efficiency)
     }
 
     /**
