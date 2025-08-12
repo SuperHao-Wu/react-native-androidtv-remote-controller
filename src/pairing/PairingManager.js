@@ -4,7 +4,7 @@ import { Buffer } from 'buffer';
 import EventEmitter from 'events';
 import TcpSockets from 'react-native-tcp-socket';
 import { get_modulus_exponent } from './pairing_utils.js';
-import { GlobalTLSManager } from '../network/index.js';
+import { GlobalTLSManager, TLSRequestQueue } from '../network/index.js';
 
 //import RNFS from 'react-native-fs';
 
@@ -25,6 +25,7 @@ class PairingManager extends EventEmitter {
 		this.connectionTimeout = null;
 		// Connection pooling infrastructure
 		this.tlsManager = GlobalTLSManager.getInstance();
+		this.tlsRequestQueue = new TLSRequestQueue();
 	}
 
 	/*
@@ -157,34 +158,14 @@ class PairingManager extends EventEmitter {
 			});
 
 			try {
-				// CRITICAL FIX: Use direct TLS connection, NOT connection pool for initial connection
-				// Connection pooling was causing issues with fresh TLS handshakes
-				console.log(`🎯 PairingManager: [${this.instanceId}] ${this.host} 🔄 PairingManager: Creating DIRECT TLS connection (bypassing pool)`);
-				this.client = TcpSockets.connectTLS(options, () => {
-					console.log(`🎯 PairingManager: [${this.instanceId}] ${this.host} 🔐 Direct TLS connection established successfully`);
-				});
+				// 🔧 FIX: Use TLSRequestQueue with retry logic instead of direct connection
+				console.log(`🎯 PairingManager: [${this.instanceId}] ${this.host} 🔄 PairingManager: Using TLSRequestQueue with retry logic`);
+				const pooledConnection = await this.tlsRequestQueue.createConnectionWithRetry(this.host, this.port, options);
 				
-				// Wait for secure connection before proceeding
-				await new Promise((resolve, reject) => {
-					const timeoutId = setTimeout(() => {
-						reject(new Error('Direct TLS connection timeout'));
-					}, 10000);
-					
-					this.client.on('secureConnect', () => {
-						clearTimeout(timeoutId);
-						console.log(`🎯 PairingManager: [${this.instanceId}] ${this.host} 🔐 Direct TLS secureConnect event fired`);
-						resolve();
-					});
-					
-					this.client.on('error', (error) => {
-						clearTimeout(timeoutId);
-						reject(error);
-					});
-				});
+				// Extract the underlying TLS socket from the pooled connection
+				this.client = pooledConnection.socket;
+				console.log(`🎯 PairingManager: [${this.instanceId}] ${this.host} � TLS connection established via TLSRequestQueue`);
 				
-				console.log(`🎯 PairingManager: [${this.instanceId}] ${this.host} 🔄 PairingManager: Direct TLS connection completed successfully`);
-				
-				console.log(`${this.host} 🔐 Direct TLS connection established successfully`);
 				console.log(`🔧 PairingManager: [${this.instanceId}] CRITICAL MOMENT: About to set connectionState to 'connected' and proceed with pairing`);
 				console.log(`🔧 PairingManager: [${this.instanceId}] Current state before setting connected: ${this.connectionState}`);
 				console.log(`🔧 PairingManager: [${this.instanceId}] Client socket status: destroyed=${this.client.destroyed}`);

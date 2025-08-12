@@ -134,6 +134,7 @@ export default class TLSSocket extends Socket {
             if (this._tlsConnectCallback) {
                 console.error(`❌ TLSSocket._startTLSTimeout: Calling stored callback with timeout error for socket ${this._id}`);
                 const timeoutError = new Error('TLS handshake timeout - socketDidSecure callback never fired');
+                timeoutError.code = 'TLS_HANDSHAKE_TIMEOUT'; // Add error code for retry logic
                 this._tlsConnectCallback = null; // Clear callback
                 this.emit('error', timeoutError);
             }

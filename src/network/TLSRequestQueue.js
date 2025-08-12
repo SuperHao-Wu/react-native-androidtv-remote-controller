@@ -63,7 +63,17 @@ class TLSRequestQueue {
                 console.log(`❌ TLSRequestQueue: [${requestId}] This attempt took: ${attemptTime}ms`);
                 console.log(`❌ TLSRequestQueue: [${requestId}] Total elapsed: ${totalElapsed}ms`);
                 console.log(`❌ TLSRequestQueue: [${requestId}] Error: ${error.message}`);
+                console.log(`❌ TLSRequestQueue: [${requestId}] Error code: ${error.code || 'UNKNOWN'}`);
                 console.log(`❌ TLSRequestQueue: [${requestId}] Host: ${hostPort}`);
+                
+                // Log specific error types for debugging
+                if (error.code === 'TLS_HANDSHAKE_TIMEOUT') {
+                    console.log(`🕐 TLSRequestQueue: [${requestId}] TLS handshake timeout (10s) - will retry with fresh connection`);
+                } else if (error.code === 'CONNECTION_CLOSED') {
+                    console.log(`🔌 TLSRequestQueue: [${requestId}] Connection closed unexpectedly - will retry`);
+                } else {
+                    console.log(`🔍 TLSRequestQueue: [${requestId}] Generic error: ${error.message} - will retry`);
+                }
                 
                 // If this was the last attempt, reject with the error
                 if (attempt === this.maxRetries) {
@@ -72,6 +82,7 @@ class TLSRequestQueue {
                     console.error(`💥 TLSRequestQueue: [${requestId}] All ${this.maxRetries} attempts failed for ${hostPort}`);
                     console.error(`💥 TLSRequestQueue: [${requestId}] Total time spent: ${finalTime}ms`);
                     console.error(`💥 TLSRequestQueue: [${requestId}] Final error: ${error.message}`);
+                    console.error(`💥 TLSRequestQueue: [${requestId}] Final error code: ${error.code || 'UNKNOWN'}`);
                     console.error(`💥 TLSRequestQueue: [${requestId}] ====== GIVING UP ======`);
                     this.retryAttempts.set(hostPort, 0); // Reset for next time
                     throw error;
@@ -108,20 +119,8 @@ class TLSRequestQueue {
             let tcpConnectTime = 'unknown';
             let tlsHandshakeStartTime = null;
             
-            // Faster timeout for retry strategy - 8 seconds should be enough for local connections
-            const timeoutId = setTimeout(() => {
-                if (isResolved) return;
-                isResolved = true;
-                const totalTime = Date.now() - connectionStartTime;
-                console.error(`🔧 TLSRequestQueue: [${requestId}] === CONNECTION TIMEOUT ===`);
-                console.error(`🔧 TLSRequestQueue: [${requestId}] Timeout after ${totalTime}ms for ${host}:${port} (attempt ${attempt})`);
-                console.error(`🔧 TLSRequestQueue: [${requestId}] TCP connected: ${tcpConnectTime !== 'unknown' ? 'YES at ' + tcpConnectTime + 'ms' : 'NO'}`);
-                console.error(`🔧 TLSRequestQueue: [${requestId}] TLS started: ${tlsHandshakeStartTime ? 'YES at ' + tlsHandshakeStartTime + 'ms' : 'NO'}`);
-                if (socket) {
-                    socket.destroy(new Error('TLS connection timeout'));
-                }
-                reject(new Error('TLS connection timeout'));
-            }, 8000); // 8 second timeout - faster for retry strategy
+            // REMOVED: TLSRequestQueue timeout - TLSSocket handles TLS handshake timeout (20 seconds)
+            // We rely on TLSSocket's _startTLSTimeout() which provides specific TLS_HANDSHAKE_TIMEOUT error
             
             // Log what we're sending to TLS connection for Sony TV debugging
             console.log(`🔧 TLSRequestQueue: TLS Connection Options:`, {
@@ -137,61 +136,79 @@ class TLSRequestQueue {
                 keyAlias: connectOptions.keyAlias
             });
 
-            // CRITICAL FIX: Use callback-only approach to avoid React Native TLS event conflicts
+            // Use callback-only approach to avoid React Native TLS event conflicts
             console.log(`🔧 TLSRequestQueue: [${requestId}] Calling TcpSockets.connectTLS...`);
             console.log(`🔍 TLSRequestQueue: [${requestId}] DEBUG - About to call TcpSockets.connectTLS function`);
             tlsHandshakeStartTime = Date.now() - connectionStartTime;
             
-            socket = TcpSockets.connectTLS(connectOptions, () => {
+            try {
+                socket = TcpSockets.connectTLS(connectOptions, () => {
+                    if (isResolved) return;
+                    isResolved = true;
+                    const secureConnectTime = Date.now() - connectionStartTime;
+                    console.log(`🔧 TLSRequestQueue: [${requestId}] === TLS HANDSHAKE SUCCESS ===`);
+                    console.log(`🔧 TLSRequestQueue: [${requestId}] secureConnect callback fired for ${host}:${port} (attempt ${attempt})`);
+                    console.log(`🔧 TLSRequestQueue: [${requestId}] TCP connect time: ${tcpConnectTime}ms`);
+                    console.log(`🔧 TLSRequestQueue: [${requestId}] TLS handshake time: ${secureConnectTime - (tlsHandshakeStartTime || 0)}ms`);
+                    console.log(`🔧 TLSRequestQueue: [${requestId}] Total connection time: ${secureConnectTime}ms`);
+                    
+                    // Log TLS connection state
+                    try {
+                        console.log(`🔧 TLSRequestQueue: [${requestId}] TLS Connection State:`, {
+                            authorized: socket.authorized,
+                            authorizationError: socket.authorizationError,
+                            encrypted: socket.encrypted,
+                            protocol: socket.getProtocol ? socket.getProtocol() : 'Unknown',
+                            cipher: socket.getCipher ? socket.getCipher() : 'Unknown'
+                        });
+                    } catch (stateError) {
+                        console.log(`🔧 TLSRequestQueue: [${requestId}] Could not get TLS state:`, stateError.message);
+                    }
+                    
+                    console.log(`🔧 TLSRequestQueue: [${requestId}] Creating PooledTLSConnection wrapper...`);
+                    const retryConnection = new PooledTLSConnection(socket, host, port);
+                    console.log(`🔧 TLSRequestQueue: [${requestId}] === TLS CONNECTION COMPLETE ===`);
+                    resolve(retryConnection);
+                });
+                
+                socket.on('connect', () => {
+                    tcpConnectTime = Date.now() - connectionStartTime;
+                    console.log(`🔧 TLSRequestQueue: [${requestId}] === TCP CONNECTION ESTABLISHED ===`);
+                    console.log(`🔧 TLSRequestQueue: [${requestId}] TCP connected for ${host}:${port} (attempt ${attempt})`);
+                    console.log(`🔧 TLSRequestQueue: [${requestId}] TCP connect took: ${tcpConnectTime}ms`);
+                    console.log(`🔧 TLSRequestQueue: [${requestId}] Now waiting for TLS handshake...`);
+                });
+                
+                socket.on('error', (error) => {
+                    if (isResolved) return;
+                    isResolved = true;
+                    const errorTime = Date.now() - connectionStartTime;
+                    console.error(`🔧 TLSRequestQueue: [${requestId}] === CONNECTION ERROR ===`);
+                    console.error(`🔧 TLSRequestQueue: [${requestId}] Error after ${errorTime}ms for ${host}:${port} (attempt ${attempt})`);
+                    console.error(`🔧 TLSRequestQueue: [${requestId}] TCP connected: ${tcpConnectTime !== 'unknown' ? 'YES at ' + tcpConnectTime + 'ms' : 'NO'}`);
+                    console.error(`🔧 TLSRequestQueue: [${requestId}] TLS started: ${tlsHandshakeStartTime ? 'YES at ' + tlsHandshakeStartTime + 'ms' : 'NO'}`);
+                    console.error(`🔧 TLSRequestQueue: [${requestId}] Error details:`, error);
+                    console.error(`🔧 TLSRequestQueue: [${requestId}] Error code:`, error.code); // Will show TLS_HANDSHAKE_TIMEOUT
+                    reject(error);
+                });
+
+                socket.on('close', () => {
+                    if (isResolved) return;
+                    isResolved = true;
+                    const closeTime = Date.now() - connectionStartTime;
+                    console.log(`🔧 TLSRequestQueue: [${requestId}] === CONNECTION CLOSED ===`);
+                    console.log(`🔧 TLSRequestQueue: [${requestId}] Connection closed after ${closeTime}ms for ${host}:${port} (attempt ${attempt})`);
+                    const closeError = new Error('TLS connection closed unexpectedly');
+                    closeError.code = 'CONNECTION_CLOSED';
+                    reject(closeError);
+                });
+
+            } catch (error) {
                 if (isResolved) return;
                 isResolved = true;
-                const secureConnectTime = Date.now() - connectionStartTime;
-                console.log(`🔧 TLSRequestQueue: [${requestId}] === TLS HANDSHAKE SUCCESS ===`);
-                console.log(`🔧 TLSRequestQueue: [${requestId}] secureConnect callback fired for ${host}:${port} (attempt ${attempt})`);
-                console.log(`🔧 TLSRequestQueue: [${requestId}] TCP connect time: ${tcpConnectTime}ms`);
-                console.log(`🔧 TLSRequestQueue: [${requestId}] TLS handshake time: ${secureConnectTime - (tlsHandshakeStartTime || 0)}ms`);
-                console.log(`🔧 TLSRequestQueue: [${requestId}] Total connection time: ${secureConnectTime}ms`);
-                clearTimeout(timeoutId);
-                
-                // Log TLS connection state
-                try {
-                    console.log(`🔧 TLSRequestQueue: [${requestId}] TLS Connection State:`, {
-                        authorized: socket.authorized,
-                        authorizationError: socket.authorizationError,
-                        encrypted: socket.encrypted,
-                        protocol: socket.getProtocol ? socket.getProtocol() : 'Unknown',
-                        cipher: socket.getCipher ? socket.getCipher() : 'Unknown'
-                    });
-                } catch (stateError) {
-                    console.log(`🔧 TLSRequestQueue: [${requestId}] Could not get TLS state:`, stateError.message);
-                }
-                
-                console.log(`🔧 TLSRequestQueue: [${requestId}] Creating PooledTLSConnection wrapper...`);
-                const pooledConnection = new PooledTLSConnection(socket, host, port);
-                console.log(`🔧 TLSRequestQueue: [${requestId}] === TLS CONNECTION COMPLETE ===`);
-                resolve(pooledConnection);
-            });
-            
-            socket.on('connect', () => {
-                tcpConnectTime = Date.now() - connectionStartTime;
-                console.log(`🔧 TLSRequestQueue: [${requestId}] === TCP CONNECTION ESTABLISHED ===`);
-                console.log(`🔧 TLSRequestQueue: [${requestId}] TCP connected for ${host}:${port} (attempt ${attempt})`);
-                console.log(`🔧 TLSRequestQueue: [${requestId}] TCP connect took: ${tcpConnectTime}ms`);
-                console.log(`🔧 TLSRequestQueue: [${requestId}] Now waiting for TLS handshake...`);
-            });
-            
-            socket.on('error', (error) => {
-                if (isResolved) return;
-                isResolved = true;
-                const errorTime = Date.now() - connectionStartTime;
-                clearTimeout(timeoutId);
-                console.error(`🔧 TLSRequestQueue: [${requestId}] === CONNECTION ERROR ===`);
-                console.error(`🔧 TLSRequestQueue: [${requestId}] Error after ${errorTime}ms for ${host}:${port} (attempt ${attempt})`);
-                console.error(`🔧 TLSRequestQueue: [${requestId}] TCP connected: ${tcpConnectTime !== 'unknown' ? 'YES at ' + tcpConnectTime + 'ms' : 'NO'}`);
-                console.error(`🔧 TLSRequestQueue: [${requestId}] TLS started: ${tlsHandshakeStartTime ? 'YES at ' + tlsHandshakeStartTime + 'ms' : 'NO'}`);
-                console.error(`🔧 TLSRequestQueue: [${requestId}] Error details:`, error);
+                console.error(`🔧 TLSRequestQueue: [${requestId}] Error creating TLS connection:`, error);
                 reject(error);
-            });
+            }
         });
     }
     
