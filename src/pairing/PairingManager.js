@@ -338,17 +338,18 @@ class PairingManager extends EventEmitter {
 				console.log(`🔧 PairingManager: [${this.instanceId}] Service name: ${this.service_name}`);
 				
 				try {
-					// CRITICAL TEST: Send simple message instead of complex pairing request
-					// This tests if write() operation itself causes encrypted alerts
-					const testMessage = Buffer.from("hello");
-					console.log(`🔧 PairingManager: [${this.instanceId}] TESTING: Sending simple test message instead of pairing request`);
-					console.log(`🔧 PairingManager: [${this.instanceId}] Test message:`, Array.from(testMessage));
-					await this.sleep(5000); // Wait 5 seconds before sending test message
-					console.log('Socket ready state:', this.client.readyState);
-					console.log('Socket authorized:', this.client.authorized);
-					const writeResult = this.client.write(testMessage);
-					console.log(`🔧 PairingManager: [${this.instanceId}] Simple test message write result: ${writeResult}`);
-					console.log(`🔧 PairingManager: [${this.instanceId}] Simple test message sent successfully - no encrypted alert!`);
+					// Create and send proper Android TV pairing request
+					console.log(`🔧 PairingManager: [${this.instanceId}] Creating pairing request for service: ${this.service_name}`);
+					const pairingRequestBuffer = this.pairingMessageManager.createPairingRequest(this.service_name);
+					console.log(`🔧 PairingManager: [${this.instanceId}] Pairing request created, size: ${pairingRequestBuffer.length} bytes`);
+					
+					// Wait 300ms after TLS handshake for stability (Phase 1 timing fix)
+					await this.sleep(300);
+					
+					console.log(`🔧 PairingManager: [${this.instanceId}] Sending pairing request to ${this.host}:${this.port}`);
+					const writeResult = this.client.write(pairingRequestBuffer);
+					console.log(`🔧 PairingManager: [${this.instanceId}] Pairing request write result: ${writeResult}`);
+					console.log(`🔧 PairingManager: [${this.instanceId}] Pairing request sent successfully`);
 				} catch (error) {
 					console.error(`🔧 PairingManager: [${this.instanceId}] ERROR sending simple test message:`, error);
 					throw error;
