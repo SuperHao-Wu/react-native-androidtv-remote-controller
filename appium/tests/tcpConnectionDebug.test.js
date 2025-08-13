@@ -5,6 +5,40 @@ const {
 	resetMockServerPairingState,
 	waitForPairingStep,
 } = require('../utils/mock-server-client');
+const http = require('http');
+
+// Helper function to fetch generated PIN from mock server status API
+async function fetchGeneratedPin() {
+  return new Promise((resolve, reject) => {
+    const req = http.get('http://localhost:3001/status', (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try {
+          const status = JSON.parse(data);
+          if (status.generatedPin) {
+            console.log(`📋 Fetched generated PIN from server: ${status.generatedPin}`);
+            resolve(status.generatedPin);
+          } else {
+            console.log('⚠️  No PIN generated yet, using fallback AB1234');
+            resolve('AB1234');
+          }
+        } catch (error) {
+          console.error('Error parsing server status:', error);
+          resolve('AB1234');
+        }
+      });
+    });
+    req.on('error', (error) => {
+      console.error('Error fetching PIN from server:', error);
+      resolve('AB1234');
+    });
+    req.setTimeout(5000, () => {
+      req.destroy();
+      resolve('AB1234');
+    });
+  });
+}
 
 describe('TCP Connection Debug Test - Real Native Socket Usage', function () {
 	let mockServerStatus;
@@ -33,8 +67,11 @@ describe('TCP Connection Debug Test - Real Native Socket Usage', function () {
 
 		// Ensure app is launched and ready
 		try {
-			await driver.getPageSource();
-			console.log('📱 App is already running');
+			// Check if app is running by looking for a basic element
+			const appElement = await driver.$('//XCUIElementTypeApplication[@name="TestAndroidTVRemoteApp"]');
+			if (await appElement.isDisplayed()) {
+				console.log('📱 App is already running');
+			}
 		} catch (error) {
 			console.log('🚀 Launching app...');
 			await driver.execute('mobile: launchApp', { bundleId: 'com.haoandroidtv.example' });
@@ -106,9 +143,23 @@ describe('TCP Connection Debug Test - Real Native Socket Usage', function () {
 		try {
 			console.log('🔍 Step 2: Checking device picker state...');
 
-			const pageSource = await driver.getPageSource();
-			const hasMockDevice = pageSource.includes('Mock TV (Testing)');
-			const hasDevices = !pageSource.includes('No devices found');
+			// Check for mock device and devices list without page source dump
+			let hasMockDevice = false;
+			let hasDevices = false;
+			
+			try {
+				const mockDeviceElement = await driver.$('//XCUIElementTypeStaticText[contains(@name, "Mock TV")]');
+				hasMockDevice = await mockDeviceElement.isDisplayed();
+			} catch (error) {
+				// Element not found
+			}
+			
+			try {
+				const noDevicesElement = await driver.$('//XCUIElementTypeStaticText[@name="No devices found"]');
+				hasDevices = !(await noDevicesElement.isDisplayed());
+			} catch (error) {
+				hasDevices = true; // Assume devices exist if "No devices" text not found
+			}
 
 			console.log('📱 Mock device found in picker:', hasMockDevice);
 			console.log('📱 Picker has devices:', hasDevices);
@@ -139,8 +190,14 @@ describe('TCP Connection Debug Test - Real Native Socket Usage', function () {
 				if (isEnabled === 'true') {
 					console.log('🔘 Clicking "Connect" button to trigger AndroidRemote library...');
 					// Check current status before clicking
-					const beforePageSource = await driver.getPageSource();
-					const beforeStatus = beforePageSource.match(/Status: (\w+)/)?.[1] || 'Unknown';
+					let beforeStatus = 'Unknown';
+					try {
+						const statusElement = await driver.$('//XCUIElementTypeStaticText[contains(@name, "Status")]');
+						const statusText = await statusElement.getText();
+						beforeStatus = statusText.match(/Status: (\w+)/)?.[1] || 'Unknown';
+					} catch (error) {
+						// Status element not found or couldn't get text
+					}
 					console.log('📱 Status before click:', beforeStatus);
 
 					await connectButton.click();
@@ -151,8 +208,14 @@ describe('TCP Connection Debug Test - Real Native Socket Usage', function () {
 					await driver.pause(8000); // Increased to 8 seconds for bridge timing
 					
 					// Additional check: Verify app status changed (indicates native code started)
-					const afterClickPageSource = await driver.getPageSource();
-					const afterStatus = afterClickPageSource.match(/Status: (\w+)/)?.[1] || 'Unknown';
+					let afterStatus = 'Unknown';
+					try {
+						const statusElement = await driver.$('//XCUIElementTypeStaticText[contains(@name, "Status")]');
+						const statusText = await statusElement.getText();
+						afterStatus = statusText.match(/Status: (\w+)/)?.[1] || 'Unknown';
+					} catch (error) {
+						// Status element not found or couldn't get text
+					}
 					console.log('📱 Status after bridge wait:', afterStatus);
 					
 					if (beforeStatus === afterStatus) {
@@ -185,8 +248,14 @@ describe('TCP Connection Debug Test - Real Native Socket Usage', function () {
 					await driver.pause(3000);
 
 					// Check status after clicking
-					const afterPageSource = await driver.getPageSource();
-					const finalStatus = afterPageSource.match(/Status: (\w+)/)?.[1] || 'Unknown';
+					let finalStatus = 'Unknown';
+					try {
+						const statusElement = await driver.$('//XCUIElementTypeStaticText[contains(@name, "Status")]');
+						const statusText = await statusElement.getText();
+						finalStatus = statusText.match(/Status: (\w+)/)?.[1] || 'Unknown';
+					} catch (error) {
+						// Status element not found or couldn't get text
+					}
 					console.log('📱 Status after click:', finalStatus);
 					console.log('📱 Status changed:', beforeStatus !== finalStatus);
 					console.log('📱 Connection attempt completed');
@@ -194,10 +263,16 @@ describe('TCP Connection Debug Test - Real Native Socket Usage', function () {
 					console.log('⚠️  Connect button is disabled - no device selected properly');
 
 					// Let's try to check what device is currently selected
-					const pageSource2 = await driver.getPageSource();
+					let deviceSelected = false;
+					try {
+						const localhostElement = await driver.$('//XCUIElementTypeStaticText[contains(@name, "localhost")]');
+						deviceSelected = await localhostElement.isDisplayed();
+					} catch (error) {
+						// localhost element not found
+					}
 					console.log(
 						'📱 Current selected device in status:',
-						pageSource2.includes('localhost') ? 'localhost selected' : 'no device selected',
+						deviceSelected ? 'localhost selected' : 'no device selected',
 					);
 
 					// Try clicking anyway to see what happens
@@ -237,20 +312,130 @@ describe('TCP Connection Debug Test - Real Native Socket Usage', function () {
 		const pairingFlowResult = await verifyPairingFlow();
 		console.log('📋 Pairing flow verification:', pairingFlowResult);
 
-		// Get final app state for debugging
-		const finalPageSource = await driver.getPageSource();
-		const hasPairingDialog =
-			finalPageSource.includes('Pairing') || finalPageSource.includes('Enter code');
-		const hasConnectedStatus = finalPageSource.includes('Connected');
-		const hasPairingStatus = finalPageSource.includes('Pairing Needed');
-		const hasUnpairedStatus = finalPageSource.includes('Unpaired');
-		const hasErrorStatus = finalPageSource.includes('Error');
+		// Check for key UI elements without dumping full page source
+		console.log('📱 Checking app state for pairing dialog...');
+		let hasPairingDialog = false;
+		let hasConnectedStatus = false;
+		let hasPairingStatus = false;
+		let hasUnpairedStatus = false;
+		let hasErrorStatus = false;
+
+		try {
+			// Check for pairing dialog elements directly
+			const pairingElements = await driver.$$('//XCUIElementTypeStaticText[contains(@name, "Pairing") or contains(@name, "Enter code")]');
+			hasPairingDialog = pairingElements.length > 0;
+			
+			// Check for status elements
+			const statusElements = await driver.$$('//XCUIElementTypeStaticText[contains(@name, "Connected") or contains(@name, "Status") or contains(@name, "Unpaired") or contains(@name, "Error")]');
+			for (const element of statusElements) {
+				try {
+					const text = await element.getText();
+					if (text.includes('Connected')) hasConnectedStatus = true;
+					if (text.includes('Pairing Needed')) hasPairingStatus = true;
+					if (text.includes('Unpaired')) hasUnpairedStatus = true;
+					if (text.includes('Error')) hasErrorStatus = true;
+				} catch (error) {
+					// Skip if can't get text
+				}
+			}
+		} catch (error) {
+			console.log('⚠️  Could not check UI elements directly');
+		}
 
 		console.log('📱 App shows pairing dialog:', hasPairingDialog);
 		console.log('📱 App shows connected status:', hasConnectedStatus);
 		console.log('📱 App shows pairing needed status:', hasPairingStatus);
 		console.log('📱 App shows unpaired status:', hasUnpairedStatus);
 		console.log('📱 App shows error status:', hasErrorStatus);
+
+		// If pairing dialog appeared, fetch generated PIN and enter it
+		if (hasPairingDialog) {
+			console.log('🔢 PIN dialog detected! Fetching generated PIN from server...');
+			
+			// Fetch the cryptographically valid PIN from mock server
+			const generatedPin = await fetchGeneratedPin();
+			console.log(`🔢 Using PIN: ${generatedPin}`);
+			
+			try {
+				// Look for PIN input field using testID first, then fallback to other selectors
+				let pinInput;
+				try {
+					pinInput = await driver.$('~pinInput'); // testID selector
+				} catch (error) {
+					pinInput = await driver.$('//XCUIElementTypeTextField[@value="Enter code" or @name="Enter code"]');
+				}
+				
+				if (await pinInput.isDisplayed()) {
+					await pinInput.setValue(generatedPin);
+					console.log(`✅ PIN ${generatedPin} entered into input field`);
+					
+					// Try Submit button with testID first, then fallback selectors
+					let submitClicked = false;
+					
+					// Try different selectors for Submit button (testID first)
+					const submitSelectors = [
+						'~submitButton',                                           // testID selector
+						'//XCUIElementTypeOther[contains(@name, "Submit")]',       // Working XPath selector 
+						'//XCUIElementTypeStaticText[@name="Submit"]/parent::*',   // Text "Submit" inside TouchableOpacity
+						'//XCUIElementTypeButton[contains(@name, "Submit")]',      // Button element
+						'//XCUIElementTypeStaticText[@name="Submit"]'              // Text element directly
+					];
+					
+					for (const selector of submitSelectors) {
+						try {
+							const submitButton = await driver.$(selector);
+							if (await submitButton.isDisplayed()) {
+								await submitButton.click();
+								console.log(`✅ Submit button clicked using selector: ${selector}`);
+								submitClicked = true;
+								break;
+							}
+						} catch (error) {
+							console.log(`⚠️  Selector ${selector} failed: ${error.message}`);
+						}
+					}
+					
+					if (submitClicked) {
+						// Wait for pairing completion and check app logs
+						await driver.pause(5000); // Extended wait for server communication
+						
+						// Check console logs for pairing errors
+						console.log('📱 Checking app console logs after PIN submission...');
+						const logs = await driver.getLogs('syslog');
+						const pairingLogs = logs.filter(log => 
+							log.message.includes('sendPairingCode') || 
+							log.message.includes('Code validation') ||
+							log.message.includes('pairing')
+						);
+						if (pairingLogs.length > 0) {
+							console.log('📱 Relevant pairing logs:');
+							pairingLogs.forEach(log => console.log(`   ${log.message}`));
+						}
+						
+						// Check if pairing completed successfully without verbose page source
+						try {
+							const connectedElement = await driver.$('//XCUIElementTypeStaticText[contains(@name, "Connected")]');
+							const pairingCompleted = await connectedElement.isDisplayed();
+							console.log('📱 Pairing completed after PIN entry:', pairingCompleted);
+						} catch (error) {
+							console.log('📱 Could not determine pairing status - may still be processing');
+						}
+					} else {
+						console.log('❌ Could not find or click Submit button with any selector');
+					}
+				} else {
+					console.log('⚠️  PIN input field not found, trying alternative selectors...');
+					// Try alternative selector for text input
+					const altPinInput = await driver.$('//XCUIElementTypeTextField');
+					if (await altPinInput.isDisplayed()) {
+						await altPinInput.setValue(generatedPin);
+						console.log(`✅ PIN ${generatedPin} entered using alternative selector`);
+					}
+				}
+			} catch (error) {
+				console.log('❌ Error handling PIN dialog:', error.message);
+			}
+		}
 
 		// Debug: Print relevant parts of the page source
 		if (finalPageSource.includes('192.168.2.150')) {
