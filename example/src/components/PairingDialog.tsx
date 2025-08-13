@@ -57,6 +57,7 @@ export const PairingDialog: React.FC<PairingDialogProps> = ({
             placeholder="Enter code"
             autoFocus
             maxLength={6}
+            testID="pinInput"
           />
 
           <View style={styles.buttonContainer}>
@@ -70,6 +71,7 @@ export const PairingDialog: React.FC<PairingDialogProps> = ({
             <TouchableOpacity
               style={[styles.button, styles.submitButton]}
               onPress={handleSubmit}
+              testID="submitButton"
             >
               <Text style={styles.buttonText}>Submit</Text>
             </TouchableOpacity>
