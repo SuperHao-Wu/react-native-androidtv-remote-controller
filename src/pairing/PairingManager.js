@@ -113,14 +113,14 @@ class PairingManager extends EventEmitter {
 		return new Promise(async (resolve, reject) => {
 			// Add connection timeout protection
 			this.connectionTimeout = setTimeout(() => {
-				console.error(`${this.host} Pairing connection timeout after 15 seconds`);
+				console.error(`${this.host} Pairing connection timeout after 30 seconds`);
 				this.connectionState = 'disconnected';
 				if (this.client) {
 					// Direct connection - no pool cleanup needed
 					this.client.destroy(new Error('Connection timeout'));
 				}
 				reject(new Error('Connection timeout'));
-			}, 15000); // 15 second timeout
+			}, 30000); // 30 second timeout (extended for automated PIN entry)
 
 			let options = {
 				port: this.port,
