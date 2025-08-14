@@ -8,6 +8,7 @@ import EventEmitter from "events";
 export class AndroidRemote extends EventEmitter {
     constructor(host, options) {
         console.log('AndroidRemote.constructor');
+        console.log('🚨🚨🚨 DEPLOYMENT TEST: NEW CODE IS DEPLOYED - VERSION 2.0 🚨🚨🚨');
         super();
         this.host = host
         this.cert = {

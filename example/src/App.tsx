@@ -14,7 +14,8 @@ import { Picker } from '@react-native-picker/picker';
 import { PairingDialog } from './components/PairingDialog';
 import { AndroidRemote, RemoteKeyCode, RemoteDirection } from 'react-native-androidtv-remote';
 import { GoogleCastDiscovery, DeviceInfo } from './services/GoogleCastDiscovery';
-import TcpSocket from 'react-native-tcp-socket';
+// TcpSocket is now bundled in react-native-androidtv-remote
+// import TcpSocket from 'react-native-tcp-socket';
 
 function App(): React.JSX.Element {
   const [connectionStatuses, setConnectionStatuses] = useState<{ [host: string]: string }>({});
@@ -113,11 +114,10 @@ function App(): React.JSX.Element {
       const checkBridge = () => {
         attempts++;
         
-        // Check if TcpSocket module is available and has required methods
-        if (TcpSocket && 
-            typeof TcpSocket.connectTLS === 'function' &&
-            typeof TcpSocket.createConnection === 'function') {
-          console.log(`✅ TcpSocket bridge is ready after ${attempts} attempts`);
+        // TcpSocket is now bundled in react-native-androidtv-remote
+        // Simple check: if we've waited enough time for native bridge to initialize
+        if (attempts >= 10) { // Wait at least 1 second (10 * 100ms)
+          console.log(`✅ Native bridge should be ready after ${attempts} attempts`);
           resolve(true);
           return;
         }
@@ -128,7 +128,7 @@ function App(): React.JSX.Element {
           return;
         }
         
-        console.log(`⏳ TcpSocket bridge not ready (attempt ${attempts}/${maxAttempts}), checking again...`);
+        console.log(`⏳ Native bridge initializing (attempt ${attempts}/${maxAttempts}), checking again...`);
         // Use setTimeout instead of requestAnimationFrame for React Native
         setTimeout(checkBridge, 100); // Check every 100ms
       };

@@ -218,37 +218,65 @@ NSString *const RCTTCPErrorDomain = @"RCTTCPErrorDomain";
     NSString *certAlias = tlsOptions[@"certAlias"];
     if (certAlias) { [settings setObject:certAlias forKey:@"certAlias"]; }
     
+    // 🔍 CERTIFICATE AUTHENTICATION PATH LOGGING
+    NSLog(@"🔐 startTLS: Certificate authentication analysis for client %@", _id);
+    NSLog(@"🔐 startTLS: certAlias='%@', keyAlias='%@'", certAlias, keyAlias);
+    NSLog(@"🔐 startTLS: resolvableCert=%@, resolvableKey=%@", resolvableCert ? @"present" : @"nil", resolvableKey ? @"present" : @"nil");
+    
     // if user provides certAlias without cert it means an identity(cert+key) has already been
     //  inserted in keychain.
     if ((certAlias && certAlias.length > 0) && (!resolvableCert)) {
-        //RCTLogWarn(@"startTLS: Trying to find existing identity with certAlias %@", certAlias);
+        NSLog(@"🔐 startTLS: PATH A - Using Android Keystore lookup with certAlias '%@'", certAlias);
         NSDictionary *identityQuery = @{
             (__bridge id)kSecClass : (__bridge id)kSecClassIdentity,
             (__bridge id)kSecReturnRef : @YES,
             (__bridge id)kSecAttrLabel : certAlias
         };
-        SecItemCopyMatching((__bridge CFDictionaryRef)identityQuery, (CFTypeRef *)&myIdent);
+        OSStatus keystoreResult = SecItemCopyMatching((__bridge CFDictionaryRef)identityQuery, (CFTypeRef *)&myIdent);
+        NSLog(@"🔐 startTLS: Keystore lookup result: %d, identity found: %@", (int)keystoreResult, myIdent ? @"YES" : @"NO");
         
     } else if (resolvableCert != nil && resolvableKey != nil) {
-        //RCTLogWarn(@"startTLS: Attempting client certificate authentication");
+        NSLog(@"🔐 startTLS: PATH B - Using PEM cert/key strings (in-memory certificates)");
         NSString *pemCert = [resolvableCert resolve];
         NSString *pemKey = [resolvableKey resolve];
+        
+        NSLog(@"🔐 startTLS: PEM cert resolution: %@", pemCert ? @"SUCCESS" : @"FAILED");
+        NSLog(@"🔐 startTLS: PEM key resolution: %@", pemKey ? @"SUCCESS" : @"FAILED");
+        
         if (pemCert && pemKey) {
+            NSLog(@"🔐 startTLS: PEM cert length: %lu chars", (unsigned long)pemCert.length);
+            NSLog(@"🔐 startTLS: PEM key length: %lu chars", (unsigned long)pemKey.length);
+            NSLog(@"🔐 startTLS: PEM cert preview: %.100s...", [pemCert UTF8String]);
+            NSLog(@"🔐 startTLS: Calling createIdentityWithCert...");
+            
             myIdent = [self createIdentityWithCert:pemCert
                                         privateKey:pemKey
                                           settings:settings];
-            //RCTLogWarn(@"startTLS: Identity creation %@", myIdent ? @"successful" : @"failed");
+            NSLog(@"🔐 startTLS: Identity creation result: %@", myIdent ? @"SUCCESS" : @"FAILED");
+        } else {
+            NSLog(@"❌ startTLS: PEM cert/key resolution failed - cannot create identity");
         }
+    } else {
+        NSLog(@"❌ startTLS: PATH C - No certificate authentication configured");
+        NSLog(@"❌ startTLS: This will likely cause TLS handshake failure with Sony TV");
     }
     
+    // 🔐 FINAL IDENTITY CONFIGURATION
     if (myIdent) {
-        if (_clientIdentity) { CFRelease(_clientIdentity); }
+        NSLog(@"✅ startTLS: Client identity obtained successfully - configuring for TLS");
+        if (_clientIdentity) { 
+            NSLog(@"🔐 startTLS: Releasing previous client identity");
+            CFRelease(_clientIdentity); 
+        }
         _clientIdentity = (SecIdentityRef)CFRetain(myIdent);
         
         NSArray *myCerts = @[ (__bridge id)myIdent ];
         [settings setObject:myCerts
                      forKey:(NSString *)kCFStreamSSLCertificates];
-        //RCTLogWarn(@"startTLS: Client certificates configured successfully");
+        NSLog(@"✅ startTLS: Client certificates configured successfully in TLS settings");
+    } else {
+        NSLog(@"❌ startTLS: CRITICAL - No client identity available for TLS handshake");
+        NSLog(@"❌ startTLS: Sony TV will likely reject connection due to missing client certificate");
     }
 
     NSLog(@"🔧 startTLS: Final TLS settings configured: %@", settings);
@@ -256,6 +284,10 @@ NSString *const RCTTCPErrorDomain = @"RCTTCPErrorDomain";
     _tls = true;
     [_tcpSocket startTLS:settings];
     NSLog(@"🔧 startTLS: Called [_tcpSocket startTLS], waiting for socketDidSecure callback");
+}
+
+- (BOOL)isTLS {
+    return _tls;
 }
 
 - (BOOL)isTLSActuallyReady {

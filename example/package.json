@@ -24,8 +24,8 @@
 		"react-native": "0.77.0",
 		"react-native-androidtv-remote": "file:../dist",
 		"react-native-fs": "^2.20.0",
-		"react-native-modpow": "^1.1.0",
 		"react-native-tcp-socket": "file:../react-native-tcp-socket",
+		"react-native-modpow": "^1.1.0",
 		"react-native-zeroconf": "^0.13.8",
 		"stream-browserify": "^3.0.0",
 		"util": "^0.12.5"

@@ -110,6 +110,11 @@ typedef enum RCTTCPError RCTTCPError;
 - (void)startTLS:(NSDictionary *)tlsOptions;
 
 /**
+ * Check if this is a TLS connection
+ */
+- (BOOL)isTLS;
+
+/**
  * Check if TLS is actually ready and secure
  */
 - (BOOL)isTLSActuallyReady;

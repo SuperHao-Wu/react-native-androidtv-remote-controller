@@ -32,6 +32,8 @@ class PooledTLSConnection extends EventEmitter {
         });
         
         this.socket.on('data', (data) => {
+            // Update lastUsed timestamp on data activity to prevent premature cleanup
+            this.lastUsed = Date.now();
             this.emit('data', data);
         });
     }
@@ -39,7 +41,11 @@ class PooledTLSConnection extends EventEmitter {
     isAlive() {
         const maxIdleTime = 30000; // 30 seconds
         const isRecent = (Date.now() - this.lastUsed) < maxIdleTime;
-        return this.isHealthy && !this.inUse && isRecent && !this.socket.destroyed;
+        // CRITICAL FIX: Don't clean up connections that are still processing data
+        // If the connection was recently used (within 15 seconds), keep it alive even if marked available
+        const recentlyActive = (Date.now() - this.lastUsed) < 15000; // 15 seconds protection window
+        const shouldKeepAlive = this.inUse || recentlyActive;
+        return this.isHealthy && !shouldKeepAlive && isRecent && !this.socket.destroyed;
     }
     
     markInUse() {
@@ -53,8 +59,20 @@ class PooledTLSConnection extends EventEmitter {
     }
     
     write(data) {
+        console.log(`🔧 PooledTLSConnection: About to write ${data.length} bytes to ${this.host}:${this.port}`);
+        console.log(`🔧 PooledTLSConnection: Socket state: destroyed=${this.socket.destroyed}, readyState=${this.socket.readyState}`);
+        console.log(`🔧 PooledTLSConnection: Data preview:`, Array.from(data.slice(0, 20)));
+        
         this.lastUsed = Date.now();
-        return this.socket.write(data);
+        
+        try {
+            const result = this.socket.write(data);
+            console.log(`🔧 PooledTLSConnection: Write result: ${result}`);
+            return result;
+        } catch (error) {
+            console.error(`🔧 PooledTLSConnection: Write error:`, error);
+            throw error;
+        }
     }
     
     destroy(error) {

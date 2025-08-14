@@ -44,10 +44,17 @@ function createTLSServer(options, connectionListener) {
  * @returns {TLSSocket}
  */
 function connectTLS(options, callback) {
+    console.log('🚨🚨🚨 DEPLOYMENT TEST: TLS SOCKET CODE UPDATED - VERSION 2.0 🚨🚨🚨');
     const socket = new Socket();
     const tlsSocket = new TLSSocket(socket, options);
-    socket.once('connect', () => tlsSocket.emit('secureConnect'));
-    if (callback) tlsSocket.once('secureConnect', callback);
+    
+    // CRITICAL FIX: Don't register callback immediately on 'secureConnect'
+    // Wait for actual native TLS handshake completion before firing callback
+    if (callback) {
+        // Store callback to be called only after real TLS handshake
+        tlsSocket._tlsConnectCallback = callback;
+        console.log(`🔧 connectTLS: Stored callback for TLS socket ${tlsSocket._id}, waiting for native TLS completion`);
+    }
     socket.connect(options);
     return tlsSocket;
 }

@@ -7,7 +7,10 @@ exports.config = {
 	port: 4723,
 	path: '/',
 
-	specs: [path.resolve(__dirname, './tests/**/*.test.js')],
+	specs: [
+		// Only run the main TCP connection test - this avoids 3 separate app launches
+		path.resolve(__dirname, './tests/tcpConnectionDebug.test.js')
+	],
 
 	maxInstances: 1,
 

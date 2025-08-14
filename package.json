@@ -10,6 +10,10 @@
 	"scripts": {
 		"babel": "babel ./src/*.* --out-dir dist --delete-dir-on-start -D && babel ./src/certificate/*.* --out-dir dist/certificate -D && babel ./src/pairing/*.* --out-dir dist/pairing -D && babel ./src/remote/*.* --out-dir dist/remote -D && babel ./src/network/*.* --out-dir dist/network -D",
 		"test": "jest",
+		"build:reinstall-js": "cd example && rm -rf node_modules && rm -f yarn.lock && yarn cache clean && yarn install",
+		"build:reinstall-pod": "cd example/ios && rm -rf Pods build && rm -f Podfile.lock && pod cache clean --all && pod install",
+		"start:ios": "cd example && lsof -ti:8081 | xargs kill -9 2>/dev/null; npx react-native start --port 8081 --reset-cache & sleep 3 && yarn ios --device",
+		"build:ios-full": "yarn babel && yarn build:reinstall-js && yarn build:reinstall-pod && yarn start:ios",
 		"build:ios": "yarn babel && cd example && rm -rf node_modules && yarn install && cd ios && rm -rf Pods && pod install && cd .. && yarn ios --device && cd ..",
 		"debug:native-logs": "idevicesyslog | grep -E \"(TcpSocket|SSL|TLS|secureConnect|certificate|startTLS|socketDidSecure|🔧|🔐|🚦|🏊|🌐|GlobalTLSManager|TLSConnectionPool|TLSRequestQueue)\" | ts '%Y-%m-%d %H:%M:%S' > native-logs_$(date +%Y-%m-%d_%H-%M-%S).txt",
 		"debug:js-logs": "idevicesyslog | grep -E \"(TestAndroidTVRemoteApp|Console|JavaScript|🌐|🚦|🏊|PairingManager|GlobalTLSManager|TLSConnectionPool|TLSRequestQueue)\" | ts '%Y-%m-%d %H:%M:%S' > js-logs_$(date +%Y-%m-%d_%H-%M-%S).txt",
@@ -20,7 +24,8 @@
 		"appium:start": "appium server --address localhost --port 4723 --relaxed-security --allow-cors",
 		"mock:start": "node appium/mock-server.js",
 		"mock:debug": "node --inspect-brk=9231 appium/mock-server.js",
-		"appium:doctor": "appium-doctor --ios"
+		"appium:doctor": "appium-doctor --ios",
+		"test:automated": "./automated-test.sh"
 	},
 	"keywords": [
 		"androidtv",
@@ -34,8 +39,7 @@
 	"license": "MIT",
 	"dependencies": {
 		"node-forge": "^1.3.1",
-		"protobufjs": "^7.3.0",
-		"react-native-tcp-socket": "file:./react-native-tcp-socket"
+		"protobufjs": "^7.3.0"
 	},
 	"peerDependencies": {
 		"react-native": ">=0.60.0",
@@ -58,7 +62,8 @@
 		"jest": "^30.0.4",
 		"react-native-modpow": "^1.1.0",
 		"selfsigned": "^3.0.0",
-		"webdriverio": "^9.18.4"
+		"webdriverio": "^9.18.4",
+		"protobufjs": "^7.4.0"
 	},
 	"type": "commonjs",
 	"homepage": "https://github.com/vricosti/react-native-androidtv-remote",

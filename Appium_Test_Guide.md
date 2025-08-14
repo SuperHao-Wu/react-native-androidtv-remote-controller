@@ -155,6 +155,10 @@ cd ios && pod install && cd ..
 brew install libimobiledevice
 # show the id
 idevice_id -l
+
+# whe this doesn't work  or idevicesyslog doesn't show anything
+sudo killall usbmuxd 
+brew services restart usbmuxd 
 # Build and install on device (replace with your device UDID if different)
 npx react-native run-ios --device $(idevice_id -l)
 ```
@@ -194,6 +198,14 @@ npx wdio run ./appium/wdio.conf.js
 - **Purpose**: Basic connectivity verification
 - **Tests**: Device connection and app responsiveness
 - **Target**: Quick setup validation
+
+## TCP debug with Wireshark 
+1. open wireshark
+2. put filter : (ip.addr == 192.168.2.150) && (tcp.port == 6467 || tcp.port == 6466)
+3. start tracking
+4. start the test 
+5. stop 
+6. File -> Export Packet Dissections -> As CSV 
 
 ## Test Scenarios
 
