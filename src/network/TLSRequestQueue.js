@@ -1,10 +1,10 @@
 import TcpSockets from 'react-native-tcp-socket';
 import { PooledTLSConnection } from './PooledTLSConnection.js';
 
-// DEBUG: Check what we're actually importing
-console.log('🔍 TLSRequestQueue: DEBUG - Imported TcpSockets object keys:', Object.keys(TcpSockets));
+// DEBUG: Check what we're actually importing (safe logging)
+console.log('🔍 TLSRequestQueue: DEBUG - TcpSockets import successful');
 console.log('🔍 TLSRequestQueue: DEBUG - TcpSockets.connectTLS type:', typeof TcpSockets.connectTLS);
-console.log('🔍 TLSRequestQueue: DEBUG - TcpSockets.connectTLS toString:', TcpSockets.connectTLS.toString().substring(0, 200));
+// Avoid toString() on React Native bridge functions - can cause circular references
 
 class TLSRequestQueue {
     constructor() {

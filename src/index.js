@@ -3,6 +3,8 @@ import { PairingManager } from "./pairing/PairingManager.js"
 import { RemoteManager } from "./remote/RemoteManager.js";
 import { RemoteMessageManager } from "./remote/RemoteMessageManager.js";
 import { GlobalTLSManager } from "./network/index.js";
+import { TokenManager } from "./auth/TokenManager.js";
+import { SecureStorage } from "./storage/SecureStorage.js";
 import EventEmitter from "events";
 
 export class AndroidRemote extends EventEmitter {
@@ -42,6 +44,36 @@ export class AndroidRemote extends EventEmitter {
         }
 
         console.log('AndroidRemote.start()');
+        
+        // PHASE 4: Check for existing authentication token
+        console.log('🔍 AndroidRemote: Checking for existing authentication token...');
+        
+        try {
+            // Try to load existing token from secure storage
+            console.log('✅ AndroidRemote: trying to load existing token from host:', this.host);
+            const existingToken = await SecureStorage.loadAuthToken(this.host);
+            
+            if (existingToken) {
+                console.log('✅ AndroidRemote: Found existing authentication token, skipping pairing');
+                console.log(`🔑 AndroidRemote: Token: ${existingToken.toString('hex').toUpperCase()}`);
+                
+                // Generate fresh certificate for this session (no persistence needed)
+                this.cert = CertificateGenerator.generateFull(this.service_name);
+                
+                // Store token in memory for RemoteManager
+                TokenManager.saveToken(this.host, existingToken);
+                
+                // Skip pairing - go directly to RemoteManager
+                return await this.startRemoteManager();
+            } else {
+                console.log('⚠️  AndroidRemote: No existing token found, starting pairing process');
+            }
+        } catch (error) {
+            console.error('❌ AndroidRemote: Error checking existing token:', error);
+            console.log('🔄 AndroidRemote: Falling back to pairing process');
+        }
+        
+        // No existing credentials - proceed with pairing
         if (!this.cert || !this.cert.key || !this.cert.cert) {
 
             this.cert = CertificateGenerator.generateFull(this.service_name);
@@ -65,8 +97,20 @@ export class AndroidRemote extends EventEmitter {
             if (!paired) {
                 return;
             }
+            
+            // Save credentials after successful pairing
+            await this.saveCredentialsAfterPairing();
         }
 
+        return await this.startRemoteManager();
+    }
+    
+    /**
+     * Start RemoteManager with existing credentials
+     */
+    async startRemoteManager() {
+        console.log('🚀 AndroidRemote: Starting RemoteManager...');
+        
         this.remoteManager = new RemoteManager(this.host, this.remote_port, this.cert, this.systeminfo);
 
         this.remoteManager.on('powered', (powered) => this.emit('powered', powered));
@@ -77,7 +121,10 @@ export class AndroidRemote extends EventEmitter {
 
         this.remoteManager.on('ready', () => this.emit('ready'));
 
-        this.remoteManager.on('unpaired', () => this.emit('unpaired'));
+        this.remoteManager.on('unpaired', () => {
+            console.log('📱 AndroidRemote: Unpaired event - may need to clear stored credentials');
+            this.emit('unpaired');
+        });
 
         await new Promise(resolve => setTimeout(resolve, 1000));
 
@@ -86,6 +133,32 @@ export class AndroidRemote extends EventEmitter {
         });
 
         return started;
+    }
+    
+    /**
+     * Save authentication token after successful pairing
+     */
+    async saveCredentialsAfterPairing() {
+        try {
+            console.log('💾 AndroidRemote: Saving authentication token after successful pairing...');
+            
+            // Get authentication token from TokenManager (stored by PairingManager)
+            const authToken = TokenManager.getToken(this.host);
+            if (!authToken) {
+                console.error('❌ AndroidRemote: No authentication token found after pairing');
+                return;
+            }
+            
+            // Save only the authentication token (certificates are generated fresh each session)
+            await SecureStorage.saveAuthToken(this.host, authToken);
+            
+            console.log('✅ AndroidRemote: Authentication token saved successfully');
+            console.log(`🔐 AndroidRemote: Token (${authToken.length} bytes) stored for ${this.host}`);
+            
+        } catch (error) {
+            console.error('❌ AndroidRemote: Failed to save authentication token after pairing:', error);
+            // Don't throw - pairing was successful, storage failure is not critical
+        }
     }
 
     sendPairingCode(code) {
@@ -112,6 +185,23 @@ export class AndroidRemote extends EventEmitter {
         return {
             key: this.cert.key,
             cert: this.cert.cert,
+        }
+    }
+    
+    /**
+     * Clear stored authentication token (for testing or re-pairing)
+     */
+    async clearStoredCredentials() {
+        try {
+            console.log('🗑️ AndroidRemote: Clearing stored authentication token...');
+            
+            // Remove only the authentication token (certificates are not persisted)
+            await SecureStorage.removeAuthToken(this.host);
+            TokenManager.removeToken(this.host);
+            
+            console.log('✅ AndroidRemote: Stored authentication token cleared');
+        } catch (error) {
+            console.error('❌ AndroidRemote: Failed to clear authentication token:', error);
         }
     }
 
