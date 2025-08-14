@@ -23,6 +23,7 @@ class PairingManager extends EventEmitter {
 		// Connection state tracking
 		this.connectionState = 'disconnected'; // disconnected, connecting, connected, paired
 		this.connectionTimeout = null;
+		this.pairingSucceeded = false; // Track pairing success to prevent race condition
 		// Connection pooling infrastructure
 		this.tlsManager = GlobalTLSManager.getInstance();
 		this.tlsRequestQueue = new TLSRequestQueue();
@@ -247,6 +248,7 @@ class PairingManager extends EventEmitter {
 							} else if (message.pairingSecretAck) {
 								console.log(this.host + ' Paired!');
 								this.connectionState = 'paired';
+								this.pairingSucceeded = true; // Mark pairing as successful before destroying connection
 								// Clear timeout since we're successfully paired
 								if (this.connectionTimeout) {
 									clearTimeout(this.connectionTimeout);
@@ -295,11 +297,11 @@ class PairingManager extends EventEmitter {
 						console.log(`${this.host} 🚫 PairingManager.close() on cancelPairing()`);
 						this.isCancelled = false;
 						reject(false);
-					} else if (this.connectionState === 'paired') {
-						console.log(`${this.host} ✅ PairingManager.close() success - pairing completed`);
+					} else if (this.pairingSucceeded) {
+						console.log(`${this.host} ✅ PairingManager.close() success - pairing completed successfully`);
 						resolve(true);
 					} else {
-						console.log(`${this.host} ❌ PairingManager.close() failure - connection closed before pairing completed (state: ${this.connectionState})`);
+						console.log(`${this.host} ❌ PairingManager.close() failure - connection closed before pairing completed (success flag: ${this.pairingSucceeded})`);
 						reject(false);
 					}
 				});

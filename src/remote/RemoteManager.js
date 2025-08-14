@@ -17,6 +17,7 @@ class RemoteManager extends EventEmitter {
     }
 
     async start() {
+        console.log(`🖥️  RemoteManager: Starting remote connection to ${this.host}:${this.port}`);
         return new Promise((resolve, reject) => {
 
             let options = {
@@ -32,13 +33,13 @@ class RemoteManager extends EventEmitter {
                 //ca: require('../../../../client-selfsigned.crt'),
             };
             
-            console.log("Start Remote Connect");
+            console.log(`🔗 RemoteManager: Starting TLS connection to ${this.host}:${this.port}`);
             this.isManualStop = false;
             
-            //console.log('RemoteManager.start(): before connectTLS');
-            // CRITICAL FIX: Use callback-only approach to avoid React Native TLS event conflicts
+            // Use callback-only approach to avoid React Native TLS event conflicts
             this.client = TcpSockets.connectTLS(options, () => {
-                console.log(this.host + " Remote secureConnect - callback fired");
+                console.log(`✅ RemoteManager: ${this.host}:${this.port} - Remote secureConnect successful, emitting 'ready'`);
+                this.emit('ready'); // Emit ready event to signal successful connection
                 resolve(true);
             });
 
@@ -123,7 +124,7 @@ class RemoteManager extends EventEmitter {
             });
 
             this.client.on('close', async (hasError) => {
-                console.info(this.host + " Remote Connection closed ", hasError);
+                console.log(`🚪 RemoteManager: ${this.host}:${this.port} - Remote connection closed, hasError: ${hasError}`);
                 
                 // Don't restart if it was manually stopped
                 if (this.isManualStop) {
@@ -171,7 +172,7 @@ class RemoteManager extends EventEmitter {
             });
 
             this.client.on('error', (error) => {
-                console.error(this.host, error);
+                console.error(`❌ RemoteManager: ${this.host}:${this.port} - Connection error:`, error.code, error.message);
                 this.error = error;
             });
         });
