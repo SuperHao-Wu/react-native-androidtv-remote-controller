@@ -17,6 +17,9 @@ import { GoogleCastDiscovery, DeviceInfo } from './services/GoogleCastDiscovery'
 // TcpSocket is now bundled in react-native-androidtv-remote
 // import TcpSocket from 'react-native-tcp-socket';
 
+// E2E Test Mode Detection
+const E2E_TEST_MODE = __DEV__ && process.env.E2E_TEST_MODE === 'true';
+
 function App(): React.JSX.Element {
   const [connectionStatuses, setConnectionStatuses] = useState<{ [host: string]: string }>({});
   const [showPairingDialog, setShowPairingDialog] = useState(false);
@@ -36,6 +39,22 @@ function App(): React.JSX.Element {
       androidRemotesRef.current.clear();
       discoveryRef.current?.stop();
     };
+  }, []);
+
+  // E2E Test Mode: Auto-populate mock device
+  useEffect(() => {
+    if (E2E_TEST_MODE) {
+      console.log('🧪 E2E_TEST_MODE: Auto-populating mock device');
+      const mockDevice: DeviceInfo = {
+        name: 'Mock TV (E2E Test Mode)',
+        host: '192.168.2.150',  
+        port: 6467  
+      };
+      
+      setDevices([mockDevice]);
+      setSelectedDevice(mockDevice.host);
+      console.log('✅ E2E_TEST_MODE: Mock device ready for testing');
+    }
   }, []);
 
   const handleScan = async () => {
@@ -344,6 +363,10 @@ function App(): React.JSX.Element {
   return (
     <SafeAreaView style={styles.container}>
       <Text style={styles.statusText}>Status: {connectionStatuses[selectedDevice] || 'Disconnected'}</Text>
+      
+      {E2E_TEST_MODE && (
+        <Text style={styles.testModeText}>🧪 E2E TEST MODE ACTIVE</Text>
+      )}
 
       <Button title="Search Devices" onPress={handleScan} testID="searchDevicesButton" />
 
@@ -387,6 +410,7 @@ function App(): React.JSX.Element {
         title="Mute"
         onPress={() => handleCommandSend('KEYCODE_MUTE')}
         disabled={connectionStatuses[selectedDevice] !== 'Connected'}
+        testID="muteButton"
       />
 
       <Modal visible={scanning} transparent>
@@ -415,6 +439,15 @@ const styles = StyleSheet.create({
   },
   statusText: {
     marginBottom: 10,
+  },
+  testModeText: {
+    marginBottom: 10,
+    textAlign: 'center',
+    fontWeight: 'bold',
+    color: '#FF6B35',
+    backgroundColor: '#FFF3E0',
+    padding: 8,
+    borderRadius: 4,
   },
   pickerContainer: {
     // Contain the Picker to prevent overlap on iOS
