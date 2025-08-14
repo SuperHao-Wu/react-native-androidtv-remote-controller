@@ -8,13 +8,13 @@
 		"node": ">=14.18.1"
 	},
 	"scripts": {
-		"babel": "babel ./src/*.* --out-dir dist --delete-dir-on-start -D && babel ./src/certificate/*.* --out-dir dist/certificate -D && babel ./src/pairing/*.* --out-dir dist/pairing -D && babel ./src/remote/*.* --out-dir dist/remote -D && babel ./src/network/*.* --out-dir dist/network -D",
+		"babel": "babel ./src/*.* --out-dir dist --delete-dir-on-start -D && babel ./src/certificate/*.* --out-dir dist/certificate -D && babel ./src/pairing/*.* --out-dir dist/pairing -D && babel ./src/remote/*.* --out-dir dist/remote -D && babel ./src/network/*.* --out-dir dist/network -D && babel ./src/auth/*.* --out-dir dist/auth -D && babel ./src/storage/*.* --out-dir dist/storage -D",
 		"test": "jest",
 		"build:reinstall-js": "cd example && rm -rf node_modules && rm -f yarn.lock && yarn cache clean && yarn install",
 		"build:reinstall-pod": "cd example/ios && rm -rf Pods build && rm -f Podfile.lock && pod cache clean --all && pod install",
 		"start:ios": "cd example && lsof -ti:8081 | xargs kill -9 2>/dev/null; npx react-native start --port 8081 --reset-cache & sleep 3 && yarn ios --device",
 		"build:ios-full": "yarn babel && yarn build:reinstall-js && yarn build:reinstall-pod && yarn start:ios",
-		"build:ios": "yarn babel && cd example && rm -rf node_modules && yarn install && cd ios && rm -rf Pods && pod install && cd .. && yarn ios --device && cd ..",
+		"build:ios-simple": "yarn babel && cd example && yarn upgrade react-native-androidtv-remote && cd .. && yarn start:ios",
 		"debug:native-logs": "idevicesyslog | grep -E \"(TcpSocket|SSL|TLS|secureConnect|certificate|startTLS|socketDidSecure|🔧|🔐|🚦|🏊|🌐|GlobalTLSManager|TLSConnectionPool|TLSRequestQueue)\" | ts '%Y-%m-%d %H:%M:%S' > native-logs_$(date +%Y-%m-%d_%H-%M-%S).txt",
 		"debug:js-logs": "idevicesyslog | grep -E \"(TestAndroidTVRemoteApp|Console|JavaScript|🌐|🚦|🏊|PairingManager|GlobalTLSManager|TLSConnectionPool|TLSRequestQueue)\" | ts '%Y-%m-%d %H:%M:%S' > js-logs_$(date +%Y-%m-%d_%H-%M-%S).txt",
 		"debug:netstat-logs": "while true; do netstat -an | grep 192.168.2.150.6467 | ts '%Y-%m-%d %H:%M:%S'; sleep 1; done > netstat-logs_$(date +%Y-%m-%d_%H-%M-%S).txt",
