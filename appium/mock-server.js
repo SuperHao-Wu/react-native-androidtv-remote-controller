@@ -1,5 +1,6 @@
 const { startMockTLSServer } = require('../__tests__/MockServer');
 const forge = require('node-forge');
+const crypto = require('crypto');
 
 // Helper function to extract modulus and exponent from certificate (like client-side)
 function getCertificateModulusExponent(certPem) {
@@ -69,6 +70,136 @@ function getLocalTimestamp() {
   return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${ms}Z`;
 }
 
+/**
+ * Realistic authentication token generator for Android TV protocol.
+ * Generates HMAC-based tokens that prove pairing completion and prevent forgery.
+ */
+class TokenGenerator {
+  constructor() {
+    // Server's secret key (in real TV, this would be device-specific)
+    // For testing, we use a deterministic key for reproducible results
+    this.serverSecret = crypto.createHash('sha256')
+      .update('android-tv-mock-server-secret-2024')
+      .digest();
+    
+    console.log(`🔐 TokenGenerator: Initialized with server secret fingerprint: ${this.serverSecret.slice(0, 4).toString('hex')}...`);
+  }
+  
+  /**
+   * Generate cryptographically secure authentication token
+   * @param {string} clientCertificatePem - Client's certificate in PEM format
+   * @param {number} timestamp - Current timestamp (for preventing replay attacks)
+   * @returns {Buffer} 16-byte authentication token
+   */
+  generateAuthenticationToken(clientCertificatePem, timestamp = null) {
+    try {
+      if (!timestamp) {
+        timestamp = Math.floor(Date.now() / 1000); // Unix timestamp
+      }
+      
+      console.log(`🔐 TokenGenerator: Generating token for timestamp ${timestamp}`);
+      
+      // Create client certificate fingerprint (proves pairing completed)
+      const clientFingerprint = crypto
+        .createHash('sha256')
+        .update(clientCertificatePem)
+        .digest();
+      
+      // Create token payload: 8 bytes fingerprint + 4 bytes timestamp + 1 byte nonce
+      const timestampBytes = Buffer.alloc(4);
+      timestampBytes.writeUInt32BE(timestamp & 0xFFFFFFFF, 0);
+      
+      const nonce = crypto.randomBytes(1); // Random byte for uniqueness
+      
+      const tokenPayload = Buffer.concat([
+        clientFingerprint.slice(0, 8),    // First 8 bytes of cert hash
+        timestampBytes,                   // 4-byte timestamp
+        nonce                            // 1-byte random nonce
+      ]); // Total: 13 bytes payload
+      
+      // Generate HMAC signature using server secret
+      const hmac = crypto.createHmac('sha256', this.serverSecret);
+      hmac.update(tokenPayload);
+      const signature = hmac.digest().slice(0, 3); // 3-byte signature
+      
+      // Final token: 13-byte payload + 3-byte signature = 16 bytes total
+      const finalToken = Buffer.concat([tokenPayload, signature]);
+      
+      console.log(`🔐 TokenGenerator: Generated ${finalToken.length}-byte token: ${finalToken.toString('hex').toUpperCase()}`);
+      console.log(`🔐 TokenGenerator: Token breakdown - Fingerprint: ${clientFingerprint.slice(0, 4).toString('hex')}..., Timestamp: ${timestamp}, Nonce: ${nonce.toString('hex')}, Signature: ${signature.toString('hex')}`);
+      
+      return finalToken;
+    } catch (error) {
+      console.error('❌ TokenGenerator: Failed to generate token:', error);
+      // Fallback to simple token for testing
+      return Buffer.from([0xAB, 0xCD, 0xEF, 0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0, 0x12, 0x34, 0x56, 0x78, 0x9A]);
+    }
+  }
+  
+  /**
+   * Validate authentication token 
+   * @param {Buffer} token - Token to validate
+   * @param {string} clientCertificatePem - Original client certificate
+   * @param {number} maxAgeSeconds - Maximum age of token (default 24 hours)
+   * @returns {boolean} True if token is valid
+   */
+  validateToken(token, clientCertificatePem, maxAgeSeconds = 24 * 60 * 60) {
+    try {
+      if (!token || token.length !== 16) {
+        console.log('❌ TokenGenerator: Invalid token length');
+        return false;
+      }
+      
+      console.log(`🔍 TokenGenerator: Validating token: ${token.toString('hex').toUpperCase()}`);
+      
+      // Extract components
+      const tokenPayload = token.slice(0, 13);
+      const providedSignature = token.slice(13, 16);
+      
+      // Extract timestamp from payload
+      const timestampBytes = tokenPayload.slice(8, 12);
+      const timestamp = timestampBytes.readUInt32BE(0);
+      
+      // Check token age
+      const currentTimestamp = Math.floor(Date.now() / 1000);
+      const tokenAge = currentTimestamp - timestamp;
+      
+      if (tokenAge > maxAgeSeconds) {
+        console.log(`❌ TokenGenerator: Token expired (age: ${tokenAge}s, max: ${maxAgeSeconds}s)`);
+        return false;
+      }
+      
+      // Regenerate signature and compare
+      const hmac = crypto.createHmac('sha256', this.serverSecret);
+      hmac.update(tokenPayload);
+      const expectedSignature = hmac.digest().slice(0, 3);
+      
+      const isValid = crypto.timingSafeEqual(providedSignature, expectedSignature);
+      
+      if (isValid) {
+        console.log(`✅ TokenGenerator: Token validated successfully (age: ${tokenAge}s)`);
+      } else {
+        console.log('❌ TokenGenerator: Token signature mismatch');
+      }
+      
+      return isValid;
+    } catch (error) {
+      console.error('❌ TokenGenerator: Token validation error:', error);
+      return false;
+    }
+  }
+  
+  /**
+   * Generate a simpler test token for development (deterministic)
+   * @param {string} clientId - Simple client identifier
+   * @returns {Buffer} 16-byte test token
+   */
+  generateTestToken(clientId = 'test-client') {
+    const hash = crypto.createHash('sha256').update(clientId + this.serverSecret.toString('hex')).digest();
+    return hash.slice(0, 16);
+  }
+}
+
 class MockServerManager {
   constructor() {
     this.pairingServer = null;
@@ -88,6 +219,20 @@ class MockServerManager {
     this.clientCertificate = null;
     this.serverCertificate = null;
     this.generatedPin = null;
+    
+    // Token generation and storage
+    this.tokenGenerator = new TokenGenerator();
+    this.clientTokens = new Map(); // Maps client address to authentication token
+    this.authenticatedClients = new Set(); // Track clients with valid tokens
+    
+    // TV state for remote control simulation
+    this.tvState = {
+      muted: false,
+      volume: 50,
+      power: true,
+      lastMuteCommand: null,
+      muteToggleCount: 0
+    };
   }
 
   // Enable/disable certificate validation for testing
@@ -224,6 +369,7 @@ class MockServerManager {
         },
         onData: (socket, data) => {
           console.log(`📨 [6466] ${getLocalTimestamp()} Remote server: Received`, data.length, 'bytes');
+          this.handleRemoteMessage(socket, data);
         },
         onClose: (socket) => {
           console.log(`🚪 [6466] ${getLocalTimestamp()} Remote server: Connection closed`);
@@ -345,9 +491,27 @@ class MockServerManager {
           // For automated testing, accept any secret (real validation would check PIN hash)
           console.log(`📋 [6467] ${getLocalTimestamp()} Mock server: PIN validation successful (test mode)`);
           
+          // Generate realistic authentication token using client certificate
+          let authToken;
+          const clientId = socket.remoteAddress + ':' + socket.remotePort;
+          
+          if (this.clientCertificate) {
+            // Use real client certificate to generate secure token
+            console.log(`🔐 [6467] ${getLocalTimestamp()} Generating authentication token using client certificate`);
+            authToken = this.tokenGenerator.generateAuthenticationToken(this.clientCertificate);
+          } else {
+            // Fallback to test token for development
+            console.log(`🔐 [6467] ${getLocalTimestamp()} Generating test token (no client certificate available)`);
+            authToken = this.tokenGenerator.generateTestToken(clientId);
+          }
+          
+          // Store token for remote connection validation
+          this.clientTokens.set(clientId, authToken);
+          console.log(`🔐 [6467] ${getLocalTimestamp()} Stored authentication token for client ${clientId}`);
+          
           const secretAck = pairingMessageManager.create({
             pairingSecretAck: {
-              secret: Buffer.from([1, 2, 3, 4])
+              secret: authToken  // Send realistic HMAC token instead of [1,2,3,4]
             },
             status: pairingMessageManager.Status.STATUS_OK,
             protocolVersion: 2
@@ -356,7 +520,7 @@ class MockServerManager {
           
           // Mark pairing as completed
           this.pairingState.pairingCompleted = true;
-          console.log(`📋 [6467] ${getLocalTimestamp()} Mock server: Pairing completed successfully!`);
+          console.log(`📋 [6467] ${getLocalTimestamp()} Mock server: Pairing completed successfully with token: ${authToken.toString('hex').toUpperCase()}`);
           
           // Don't close connection immediately - let client handle it
           console.log(`📋 [6467] ${getLocalTimestamp()} Mock server: Keeping connection alive for final handshake`);
@@ -365,6 +529,68 @@ class MockServerManager {
         console.error("Mock server error parsing message:", error);
       }
     }, 100); // 100ms delay like the original
+  }
+
+  /**
+   * Handle remote control messages on port 6466
+   */
+  handleRemoteMessage(socket, data) {
+    try {
+      // Import RemoteMessageManager dynamically
+      const { RemoteMessageManager } = require('../dist/remote/RemoteMessageManager');
+      const remoteMessageManager = new RemoteMessageManager();
+      
+      console.log(`🎮 [6466] ${getLocalTimestamp()} Parsing remote control message...`);
+      
+      // Parse the remote message
+      const message = remoteMessageManager.parse(data);
+      
+      if (message.remoteKeyInject) {
+        const keyCode = message.remoteKeyInject.keyCode;
+        const direction = message.remoteKeyInject.direction;
+        
+        console.log(`🎮 [6466] ${getLocalTimestamp()} Remote key inject: keyCode=${keyCode}, direction=${direction}`);
+        
+        // Handle specific key codes
+        if (keyCode === 91 || keyCode === 164) { // KEYCODE_MUTE or KEYCODE_VOLUME_MUTE
+          this.handleMuteCommand(socket, keyCode, direction);
+        } else {
+          console.log(`🎮 [6466] ${getLocalTimestamp()} Received key command: ${keyCode} (not handled by mock server)`);
+        }
+      } else if (message.remoteConfigure) {
+        console.log(`🎮 [6466] ${getLocalTimestamp()} Remote configure message received`);
+        // Handle remote configuration if needed
+      } else if (message.remotePingRequest) {
+        console.log(`🎮 [6466] ${getLocalTimestamp()} Remote ping request received`);
+        // Handle ping if needed
+      } else {
+        console.log(`🎮 [6466] ${getLocalTimestamp()} Unknown remote message type:`, Object.keys(message));
+      }
+      
+    } catch (error) {
+      console.error(`❌ [6466] ${getLocalTimestamp()} Error parsing remote message:`, error.message);
+    }
+  }
+  
+  /**
+   * Handle mute/unmute command
+   */
+  handleMuteCommand(socket, keyCode, direction) {
+    const timestamp = getLocalTimestamp();
+    
+    // Toggle mute state
+    this.tvState.muted = !this.tvState.muted;
+    this.tvState.lastMuteCommand = timestamp;
+    this.tvState.muteToggleCount++;
+    
+    const muteState = this.tvState.muted ? 'MUTED' : 'UNMUTED';
+    const keyName = keyCode === 91 ? 'KEYCODE_MUTE' : 'KEYCODE_VOLUME_MUTE';
+    
+    console.log(`🔇 [6466] ${timestamp} MUTE COMMAND RECEIVED: ${keyName} -> TV is now ${muteState}`);
+    console.log(`🔇 [6466] ${timestamp} TV State: muted=${this.tvState.muted}, volume=${this.tvState.volume}, toggleCount=${this.tvState.muteToggleCount}`);
+    
+    // Log for test validation
+    console.log(`📊 [6466] ${timestamp} MUTE_STATE_CHANGED: ${this.tvState.muted ? 'true' : 'false'}`);
   }
 
   async checkStatus() {
@@ -420,6 +646,16 @@ function startStatusServer(serverManager, port = 3001) {
         },
         pairingState: serverManager.pairingState,
         generatedPin: serverManager.generatedPin, // Add generated PIN for test access
+        authentication: {
+          totalTokensIssued: serverManager.clientTokens.size,
+          authenticatedClients: serverManager.authenticatedClients.size,
+          tokenGenerator: {
+            algorithm: 'HMAC-SHA256',
+            tokenLength: '16 bytes',
+            components: 'fingerprint(8) + timestamp(4) + nonce(1) + signature(3)'
+          }
+        },
+        tvState: serverManager.tvState, // Add TV state for remote control testing
         timestamp: getLocalTimestamp()
       };
       
@@ -437,6 +673,46 @@ function startStatusServer(serverManager, port = 3001) {
       serverManager.setCertificateValidation(false);
       res.writeHead(200);
       res.end(JSON.stringify({ success: true, message: 'Certificate validation disabled (Mock mode)' }));
+    } else if (req.url === '/generate-test-token' && req.method === 'POST') {
+      // Generate a realistic authentication token for E2E testing
+      try {
+        const host = req.headers['x-test-host'] || '192.168.2.150';
+        console.log(`🧪 Mock Server: Generating test token for E2E testing (host: ${host})`);
+        
+        // Generate test client certificate for token creation
+        const testClientCert = serverManager.createTestCertificate(`Test Client - ${host}`);
+        
+        // Use the same token generation as real pairing flow
+        const testToken = serverManager.tokenGenerator.generateAuthenticationToken(testClientCert);
+        
+        // Store the token in server's client tokens map (simulate successful pairing)
+        const clientId = `${host}:test`;
+        serverManager.clientTokens.set(clientId, testToken);
+        
+        console.log(`✅ Mock Server: Generated test token for ${host}: ${testToken.toString('hex').toUpperCase()}`);
+        
+        const response = {
+          success: true,
+          host: host,
+          token: testToken.toString('base64'),
+          tokenHex: testToken.toString('hex').toUpperCase(),
+          tokenLength: testToken.length,
+          message: 'Test authentication token generated successfully',
+          timestamp: getLocalTimestamp()
+        };
+        
+        res.writeHead(200);
+        res.end(JSON.stringify(response, null, 2));
+      } catch (error) {
+        console.error('❌ Mock Server: Failed to generate test token:', error);
+        res.writeHead(500);
+        res.end(JSON.stringify({ 
+          success: false, 
+          error: 'Failed to generate test token',
+          details: error.message,
+          timestamp: getLocalTimestamp()
+        }));
+      }
     } else {
       res.writeHead(404);
       res.end(JSON.stringify({ error: 'Not found' }));
