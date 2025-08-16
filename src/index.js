@@ -7,6 +7,8 @@ import { TokenManager } from "./auth/TokenManager.js";
 import { SecureStorage } from "./storage/SecureStorage.js";
 import EventEmitter from "events";
 
+export { SecureStorage };
+
 export class AndroidRemote extends EventEmitter {
     constructor(host, options) {
         console.log('AndroidRemote.constructor');
@@ -245,4 +247,5 @@ export default {
     CertificateGenerator,
     RemoteKeyCode,
     RemoteDirection,
+    SecureStorage,
 }

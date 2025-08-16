@@ -406,7 +406,8 @@ console.log('📊 Phase 1 Status: ✅ SUCCESS - Dynamic PIN pairing flow complet
 - **Phase 1**: ✅ Connection race conditions resolved with timing fixes
 - **Phase 2**: ✅ TLS retry logic with optimized timeouts and exponential backoff
 - **Phase 3**: ✅ Complete automated pairing system with dynamic PIN generation
-- **Phase 4**: 🔄 **CRITICAL** - Authentication architecture requires complete overhaul
+- **Phase 4**: ✅ Certificate-based authentication implementation completed
+- **Phase 5**: 🔄 Smart Connect button with intelligent port routing and enhanced heartbeat monitoring
 
 ## Phase 4: Authentication Architecture Discovery and Correction
 
@@ -447,7 +448,109 @@ Replace the token system with proper certificate persistence:
 1. **Store certificates in iOS Keychain** after successful pairing
 2. **Reuse stored certificates** for all subsequent connections
 3. **Handle certificate invalidity** by clearing storage and re-pairing
-4. **Match working Python implementation** protocol exactly
+
+## Phase 5: Smart Connect Button with Intelligent Port Routing
+
+### Problem: Complex User Experience and Connection Management
+After implementing certificate-based authentication, several UX and connection management issues emerged:
+- Users confused about when to use "Connect" vs when device should auto-connect
+- E2E tests failing due to disabled Connect button when certificates exist
+- No graceful handling of certificate invalidity (expired or TV reset)
+- Manual reconnection required when connections drop
+- iOS app lifecycle not integrated with connection health
+
+### Solution: Smart Single-Button Interface with Intelligent Routing
+
+#### **Smart Connect Button Logic**
+A single "Connect" button that intelligently chooses the connection method:
+
+```
+User Clicks Connect Button
+    ↓
+Check Certificate in iOS Keychain
+    ↓
+┌─────────────────┐           ┌─────────────────┐
+│ Certificate     │    YES    │ Attempt Port    │
+│ Exists?         │──────────▶│ 6466 (Remote)   │
+└─────────────────┘           └─────────────────┘
+    │ NO                              │
+    ▼                                 ▼
+┌─────────────────┐           ┌─────────────────┐
+│ Start Port 6467 │           │ TLS Handshake   │
+│ (Pairing)       │           │ Success?        │
+└─────────────────┘           └─────────────────┘
+                                      │ FAILED
+                                      ▼
+                              ┌─────────────────┐
+                              │ Clear Certificate│
+                              │ Fallback Port   │
+                              │ 6467 (Re-pair)  │
+                              └─────────────────┘
+```
+
+#### **Connection States and User Feedback**
+Enhanced status messages provide clear feedback:
+
+- **`Disconnected`** - Ready to connect (fresh or after disconnect)
+- **`Connecting (Remote)`** - Attempting port 6466 with stored certificate
+- **`Connecting (Pairing)`** - Attempting port 6467 for new pairing
+- **`Re-pairing Required`** - Certificate invalid, falling back to pairing
+- **`Pairing Needed`** - Waiting for PIN entry
+- **`Connected`** - Remote control ready
+
+#### **Key Implementation Components**
+
+**Enhanced AndroidRemote.start() Logic:**
+```javascript
+async start() {
+    // Smart connection routing
+    const existingCertData = await SecureStorage.loadCertificate(this.host);
+    
+    if (existingCertData && CertificateManager.isValidCertificateData(existingCertData)) {
+        try {
+            // Try port 6466 first with stored certificate
+            this.emit('trying-remote');
+            return await this.attemptRemoteConnection();
+        } catch (error) {
+            // Certificate invalid - clear and fall back to pairing
+            this.emit('falling-back-to-pairing');
+            await this.clearStoredCredentials();
+            return await this.startPairingFlow();
+        }
+    } else {
+        // No certificate - start fresh pairing
+        return await this.startPairingFlow();
+    }
+}
+```
+
+**Enhanced Connection Health Monitoring:**
+- **Proactive heartbeat monitoring** detects connection health
+- **iOS app lifecycle integration** handles background/foreground transitions  
+- **TLS retry logic** applied to both port 6467 and 6466
+- **User-controlled reconnection** - no automatic reconnects, Connect button re-enables
+
+#### **E2E Testing Integration**
+The smart Connect button fixes E2E test failures:
+- Auto-triggers connection in E2E mode after certificate setup
+- Handles both fresh pairing and certificate reuse scenarios
+- Works with existing mock server certificate generation
+
+#### **Benefits of Smart Connect Approach**
+1. **Single UI Entry Point** - Users always click "Connect", no confusion
+2. **Intelligent Behavior** - App chooses port 6467 vs 6466 automatically  
+3. **Graceful Degradation** - Certificate failure triggers automatic re-pairing
+4. **User Control** - No automatic reconnection, user decides when to reconnect
+5. **Clear Status** - Users see exactly what type of connection is happening
+6. **Production Ready** - Handles certificate expiry, network issues, app lifecycle
+7. **E2E Compatible** - Fixes test automation issues
+
+### Phase 5 Implementation Status
+- 🔄 **Core Logic**: Smart connection routing in AndroidRemote
+- 🔄 **UI Enhancement**: Enhanced status management and button behavior
+- 🔄 **RemoteManager Integration**: TLS retry logic for port 6466
+- 🔄 **Heartbeat Monitoring**: Proactive connection health tracking
+- 🔄 **iOS Lifecycle**: Background/foreground connection management
 
 ## Development Guidelines
 
