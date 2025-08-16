@@ -39,7 +39,7 @@
 	"license": "MIT",
 	"dependencies": {
 		"node-forge": "^1.3.1",
-		"protobufjs": "^7.3.0"
+		"protobufjs": "^7.4.0"
 	},
 	"peerDependencies": {
 		"react-native": ">=0.60.0",
@@ -62,8 +62,7 @@
 		"jest": "^30.0.4",
 		"react-native-modpow": "^1.1.0",
 		"selfsigned": "^3.0.0",
-		"webdriverio": "^9.18.4",
-		"protobufjs": "^7.4.0"
+		"webdriverio": "^9.18.4"
 	},
 	"type": "commonjs",
 	"homepage": "https://github.com/vricosti/react-native-androidtv-remote",
