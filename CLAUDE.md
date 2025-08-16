@@ -406,7 +406,48 @@ console.log('📊 Phase 1 Status: ✅ SUCCESS - Dynamic PIN pairing flow complet
 - **Phase 1**: ✅ Connection race conditions resolved with timing fixes
 - **Phase 2**: ✅ TLS retry logic with optimized timeouts and exponential backoff
 - **Phase 3**: ✅ Complete automated pairing system with dynamic PIN generation
-- **Phase 4**: 🔄 Next - Persistent remote connection with full protocol implementation
+- **Phase 4**: 🔄 **CRITICAL** - Authentication architecture requires complete overhaul
+
+## Phase 4: Authentication Architecture Discovery and Correction
+
+### Critical Discovery: Certificate-Based Authentication (Not Token-Based)
+After analyzing the working Python implementation (`androidtvremote2`), we discovered the React Native implementation has a **fundamental authentication flaw**:
+
+#### **Current React Native Implementation (Broken)**:
+- ❌ **Fresh certificates generated** every connection attempt  
+- ❌ **Complex but unused token system** - tokens stored but never sent to TV
+- ❌ **Authentication failure** - TV doesn't recognize new certificates as previously paired
+
+#### **Working Python Implementation**:
+- ✅ **Persistent client certificates** stored on disk (`cert.pem`, `key.pem`)
+- ✅ **Certificate reuse** for both pairing and remote connections
+- ✅ **No token system** - authentication purely certificate-based
+
+#### **Correct Authentication Protocol**:
+```
+Pairing Phase (Port 6467)          Remote Phase (Port 6466)
+┌─────────────────────┐            ┌─────────────────────┐
+│ Generate client cert│───────────▶│ Reuse same client   │
+│ Exchange with TV    │            │ cert for remote     │
+│ PIN validation      │            │ connection          │
+│ Store cert in       │            │ TV recognizes cert  │
+│ keychain            │            │ → Immediate auth    │
+└─────────────────────┘            └─────────────────────┘
+```
+
+### Root Cause Analysis
+The Android TV protocol authenticates clients using **persistent client certificates**, not tokens:
+1. **Pairing establishes certificate trust** between client and TV
+2. **Remote connections reuse the same certificate** for authentication  
+3. **No additional tokens or secrets** are needed after pairing
+4. **TV recognizes the certificate** as previously paired → grants access
+
+### Solution: Certificate-Based Authentication
+Replace the token system with proper certificate persistence:
+1. **Store certificates in iOS Keychain** after successful pairing
+2. **Reuse stored certificates** for all subsequent connections
+3. **Handle certificate invalidity** by clearing storage and re-pairing
+4. **Match working Python implementation** protocol exactly
 
 ## Development Guidelines
 
