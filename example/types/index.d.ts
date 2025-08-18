@@ -13,3 +13,52 @@ declare module 'tls' {
     export const connect: any;
     export const createServer: any;
 }
+
+// Minimal typings for react-native-androidtv-remote used by the example app
+declare module 'react-native-androidtv-remote' {
+  import { EventEmitter } from 'events';
+
+  export type Certificate = {
+    key: string | null;
+    cert: string | null;
+    androidKeyStore?: string;
+    certAlias?: string;
+    keyAlias?: string;
+  };
+
+  export interface AndroidRemoteOptions {
+    pairing_port?: number;
+    remote_port?: number;
+    service_name?: string;
+    systeminfo?: { manufacturer: string; model: string };
+    cert?: Certificate;
+  }
+
+  export class AndroidRemote extends EventEmitter {
+    constructor(host: string, options: AndroidRemoteOptions);
+    start(): Promise<any>;
+    stop(): void;
+    sendKey(key: number, direction: number): any;
+    sendPower(): any;
+    sendAppLink(appLink: string): any;
+    getCertificate(): Certificate | null;
+    pairingManager?: any;
+  }
+
+  export const RemoteKeyCode: Record<string, number>;
+  export const RemoteDirection: { SHORT: number; LONG: number };
+
+  export class SecureStorage {
+    static saveAuthToken(host: string, token: any): Promise<void>;
+    static loadAuthToken(host: string): Promise<any>;
+    static removeAuthToken(host: string): Promise<void>;
+  }
+
+  const _default: {
+    AndroidRemote: typeof AndroidRemote;
+    RemoteKeyCode: typeof RemoteKeyCode;
+    RemoteDirection: typeof RemoteDirection;
+    SecureStorage: typeof SecureStorage;
+  };
+  export default _default;
+}

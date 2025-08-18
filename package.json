@@ -25,7 +25,8 @@
 		"mock:start": "node appium/mock-server.js",
 		"mock:debug": "node --inspect-brk=9231 appium/mock-server.js",
 		"appium:doctor": "appium-doctor --ios",
-		"test:automated": "./automated-test.sh"
+		"test:automated": "./automated-test.sh",
+		"start-ios-with-parameter": "./scripts/launch-ios-with-certificate.sh"
 	},
 	"keywords": [
 		"androidtv",
