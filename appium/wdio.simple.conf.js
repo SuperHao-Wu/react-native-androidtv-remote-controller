@@ -8,8 +8,8 @@ exports.config = {
 	path: '/',
 
 	specs: [
-		// Only run the main TCP connection test - this avoids 3 separate app launches
-		path.resolve(__dirname, './tests/tcpConnectionDebug.test.js')
+		// Default specs - can be overridden with --spec parameter
+		path.resolve(__dirname, './tests/**/*.test.js')
 	],
 
 	maxInstances: 1,
@@ -22,7 +22,8 @@ exports.config = {
 			'appium:platformVersion': '18.5',
 			'appium:automationName': 'XCUITest',
 			'appium:bundleId': 'com.haoandroidtv.example',
-			'appium:noReset': false,
+			'appium:noReset': true,
+			'appium:autoLaunch': false,
 			'appium:newCommandTimeout': 300,
 			'appium:showXcodeLog': true,
 			'appium:xcodeOrgId': '8XK2WWZBQS',
