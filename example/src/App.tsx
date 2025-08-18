@@ -9,16 +9,39 @@ import {
   Modal,
   ActivityIndicator,
   Platform,
+  AppState,
+  AppStateStatus,
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { PairingDialog } from './components/PairingDialog';
-import { AndroidRemote, RemoteKeyCode, RemoteDirection } from 'react-native-androidtv-remote';
+import RNRemote from 'react-native-androidtv-remote';
+const { AndroidRemote, RemoteKeyCode, RemoteDirection, SecureStorage } = RNRemote;
 import { GoogleCastDiscovery, DeviceInfo } from './services/GoogleCastDiscovery';
-// TcpSocket is now bundled in react-native-androidtv-remote
-// import TcpSocket from 'react-native-tcp-socket';
+import { LaunchArguments } from 'react-native-launch-arguments';
+import {Buffer} from 'buffer';
 
-// E2E Test Mode Detection
-const E2E_TEST_MODE = __DEV__ && process.env.E2E_TEST_MODE === 'true';
+// E2E Test Mode Detection using Launch Arguments (corrected syntax)
+console.log('🚀 App.tsx: Starting launch arguments detection...');
+const launchArgs = LaunchArguments.value() as Record<string, any> | undefined;
+console.log('🧪 Launch Arguments (JSON):', JSON.stringify(launchArgs, null, 2));
+const rawHost = launchArgs?.['e2ehost'];
+const rawCertificate = launchArgs?.['e2ecertificate'];
+const rawPrivateKey = launchArgs?.['e2eprivatekey'];
+
+console.log('🔍 Raw e2etestmode value:', launchArgs?.['e2etestmode']);
+console.log('🔍 Raw e2etestmode type:', typeof launchArgs?.['e2etestmode']);
+
+const E2E_TEST_MODE = Boolean(
+  launchArgs?.['e2etestmode'] === '1' || launchArgs?.['e2etestmode'] === 1
+);
+const E2E_HOST: string | null = typeof rawHost === 'string' && rawHost.length > 0 ? rawHost : null;
+const E2E_CERTIFICATE: string | null = typeof rawCertificate === 'string' && rawCertificate.length > 0 ? rawCertificate : null;
+const E2E_PRIVATE_KEY: string | null = typeof rawPrivateKey === 'string' && rawPrivateKey.length > 0 ? rawPrivateKey : null;
+
+console.log('🧪 E2E_TEST_MODE (boolean):', E2E_TEST_MODE);
+console.log('🧪 E2E_HOST:', E2E_HOST);
+console.log('🧪 E2E_CERTIFICATE length:', E2E_CERTIFICATE ? (E2E_CERTIFICATE as string).length : 0);
+console.log('🧪 E2E_PRIVATE_KEY length:', E2E_PRIVATE_KEY ? (E2E_PRIVATE_KEY as string).length : 0);
 
 function App(): React.JSX.Element {
   const [connectionStatuses, setConnectionStatuses] = useState<{ [host: string]: string }>({});
@@ -27,12 +50,15 @@ function App(): React.JSX.Element {
   const [devices, setDevices] = useState<DeviceInfo[]>([]);
   const [selectedDevice, setSelectedDevice] = useState<string>('');
 
-  const androidRemotesRef = useRef<Map<string, AndroidRemote>>(new Map());
+  const androidRemotesRef = useRef<Map<string, any>>(new Map());
   const discoveryRef = useRef<GoogleCastDiscovery | null>(null);
-  const certificateRef = useRef<Map<string, { key: string | null; cert: string | null }>>(new Map());
+
+  
+  // iOS app lifecycle state management
+  const appState = useRef(AppState.currentState);
+  const backgroundTime = useRef<number | null>(null);
   // search devices
   useEffect(() => {
-    console.log('useEffect({}, []');
     discoveryRef.current = new GoogleCastDiscovery();
     return () => {
       androidRemotesRef.current.forEach((remote) => remote.stop());
@@ -41,19 +67,90 @@ function App(): React.JSX.Element {
     };
   }, []);
 
-  // E2E Test Mode: Auto-populate mock device
+  // iOS app lifecycle integration - handle background/foreground transitions
   useEffect(() => {
-    if (E2E_TEST_MODE) {
-      console.log('🧪 E2E_TEST_MODE: Auto-populating mock device');
-      const mockDevice: DeviceInfo = {
-        name: 'Mock TV (E2E Test Mode)',
-        host: '192.168.2.150',  
-        port: 6467  
+    const handleAppStateChange = (nextAppState: AppStateStatus) => {
+      console.log(`📱 App lifecycle: ${appState.current} -> ${nextAppState}`);
+      
+      if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
+        // App came to foreground
+        console.log('📱 App lifecycle: App returned to foreground');
+        
+        if (backgroundTime.current) {
+          const timeInBackground = Date.now() - backgroundTime.current;
+          console.log(`📱 App lifecycle: App was in background for ${Math.round(timeInBackground / 1000)}s`);
+          
+          // If app was in background for more than 30 seconds, check connection health
+          if (timeInBackground > 30000) {
+            console.log('📱 App lifecycle: App was in background for significant time - checking connection health');
+            checkConnectionHealthAfterBackground();
+          }
+          
+          backgroundTime.current = null;
+        }
+      } else if (appState.current === 'active' && nextAppState.match(/inactive|background/)) {
+        // App went to background
+        console.log('📱 App lifecycle: App went to background');
+        backgroundTime.current = Date.now();
+      }
+      
+      appState.current = nextAppState;
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    
+    return () => subscription?.remove();
+  }, []);
+  
+  // Check connection health after app returns from background
+  const checkConnectionHealthAfterBackground = () => {
+    androidRemotesRef.current.forEach((remote, host) => {
+      const status = connectionStatuses[host];
+      
+      if (status === 'Connected') {
+        console.log(`📱 App lifecycle: Checking connection health for ${host} after background return`);
+        
+        // For connected devices, the heartbeat monitoring in RemoteManager should automatically
+        // detect if the connection is still healthy. If not, it will emit 'unpaired' event
+        // which we handle by re-enabling the Connect button for user to reconnect.
+        
+        // We could optionally send a test ping here, but the existing heartbeat
+        // monitoring should handle this automatically.
+      }
+    });
+  };
+
+  // E2E Test Mode: Auto-populate mock device and pre-populate client certificate
+  useEffect(() => {
+    if (E2E_TEST_MODE && E2E_HOST && E2E_CERTIFICATE && E2E_PRIVATE_KEY) {
+      console.log('🧪 E2E_TEST_MODE: Setting up test environment...');
+      
+      const setupE2EMode = async () => {
+        try {
+          // Step 1: Store the pre-generated client certificate in keychain
+          console.log(`🔐 E2E_TEST_MODE: Pre-populating client certificate for ${E2E_HOST}`);
+          const certificatePem = Buffer.from(E2E_CERTIFICATE as string, 'base64').toString('utf8');
+          const privateKeyPem = Buffer.from(E2E_PRIVATE_KEY as string, 'base64').toString('utf8');
+          await SecureStorage.saveCertificate(E2E_HOST as string, certificatePem, privateKeyPem);
+          console.log(`✅ E2E_TEST_MODE: Client certificate stored in keychain (${certificatePem.length} + ${privateKeyPem.length} chars)`);
+          
+          // Step 2: Set up mock device 
+          const mockDevice: DeviceInfo = {
+            name: 'Mock TV (E2E Test Mode)',
+            host: E2E_HOST as string,  
+            port: 6467  
+          };
+          
+          setDevices([mockDevice]);
+          setSelectedDevice(mockDevice.host || '');
+          console.log('✅ E2E_TEST_MODE: Mock device and client certificate ready for testing');
+          
+        } catch (error) {
+          console.error('❌ E2E_TEST_MODE: Failed to setup test environment:', error);
+        }
       };
       
-      setDevices([mockDevice]);
-      setSelectedDevice(mockDevice.host);
-      console.log('✅ E2E_TEST_MODE: Mock device ready for testing');
+      setupE2EMode();
     }
   }, []);
 
@@ -67,15 +164,7 @@ function App(): React.JSX.Element {
 
     try {
       const results = await discoveryRef.current.scan();
-      
-      // Always add mock device for testing - use Mac's IP since app runs on iPhone
-      const mockDevice: DeviceInfo = {
-        name: 'Mock TV (Testing)',
-        host: '192.168.2.150',  // Mac's IP address where mock server runs
-        port: 6467  // Must match pairing_port in AndroidRemote options (pairing happens first)
-      };
-      
-      const allDevices = [mockDevice, ...results.devices];
+      const allDevices = [...results.devices];
       setDevices(allDevices);
       
       if (allDevices.length > 0) {
@@ -191,7 +280,7 @@ function App(): React.JSX.Element {
     }
 
     // Set connecting state immediately
-    setConnectionStatuses((prev) => ({ ...prev, [selectedDevice]: 'Connecting' }));
+    setConnectionStatuses((prev) => ({ ...prev, [selectedDevice]: 'Connecting (Pairing)' }));
 
     try {
       console.log('🔍 Waiting for native bridge to be ready...');
@@ -215,8 +304,9 @@ function App(): React.JSX.Element {
           model: 'default-model',
         },
         cert: {
-          key: certificateRef.current.get(selectedDevice)?.key || null,
-          cert: certificateRef.current.get(selectedDevice)?.cert || null,
+          // AndroidRemote now handles certificate loading from SecureStorage internally
+          key: null, // Will be loaded from SecureStorage by AndroidRemote
+          cert: null, // Will be loaded from SecureStorage by AndroidRemote
           androidKeyStore: 'AndroidKeyStore',
           certAlias: 'remotectl-atv-cert',
           keyAlias: 'remotectl-atv',
@@ -227,7 +317,19 @@ function App(): React.JSX.Element {
       const androidRemote = new AndroidRemote(selectedDevice, options);
       androidRemotesRef.current.set(selectedDevice, androidRemote);
 
-      // Set up minimal event listeners for UI updates
+      // Set up enhanced event listeners for smart connection UI updates
+      
+      // Smart connection routing events
+      androidRemote.on('trying-remote', () => {
+        console.log('AndroidRemote: trying-remote event - attempting port 6466 with certificate');
+        setConnectionStatuses((prev) => ({ ...prev, [selectedDevice]: 'Connecting (Remote)' }));
+      });
+      
+      androidRemote.on('falling-back-to-pairing', () => {
+        console.log('AndroidRemote: falling-back-to-pairing event - certificate invalid, starting pairing');
+        setConnectionStatuses((prev) => ({ ...prev, [selectedDevice]: 'Re-pairing Required' }));
+      });
+      
       androidRemote.on('secret', async () => {
         console.log('AndroidRemote: secret event received - waiting for TLS readiness...');
         
@@ -256,12 +358,9 @@ function App(): React.JSX.Element {
 
       androidRemote.on('ready', () => {
         console.log('AndroidRemote: ready event received');
-        const cert = androidRemote.getCertificate();
-        if (cert && cert.key && cert.cert) {
-          certificateRef.current.set(selectedDevice, cert);
-        }
+        // Certificate storage is now handled automatically by AndroidRemote
         setConnectionStatuses((prev) => ({ ...prev, [selectedDevice]: 'Connected' }));
-        Alert.alert("Connected", `Remote is ready for ${selectedDevice}`);
+        // UI feedback via status and enabled Mute button is sufficient - no alert needed
       });
 
       androidRemote.on('unpaired', () => {
@@ -392,15 +491,21 @@ function App(): React.JSX.Element {
         title={
           connectionStatuses[selectedDevice] === 'Connected' 
             ? 'Disconnect' 
-            : connectionStatuses[selectedDevice] === 'Connecting'
+            : connectionStatuses[selectedDevice] === 'Connecting (Remote)'
             ? 'Connecting...'
+            : connectionStatuses[selectedDevice] === 'Connecting (Pairing)'
+            ? 'Connecting...'
+            : connectionStatuses[selectedDevice] === 'Re-pairing Required'
+            ? 'Re-pairing...'
             : 'Connect'
         }
         onPress={handleConnect}
         disabled={
           !selectedDevice || 
           connectionStatuses[selectedDevice] === 'Pairing Needed' ||
-          connectionStatuses[selectedDevice] === 'Connecting'
+          connectionStatuses[selectedDevice] === 'Connecting (Remote)' ||
+          connectionStatuses[selectedDevice] === 'Connecting (Pairing)' ||
+          connectionStatuses[selectedDevice] === 'Re-pairing Required'
         }
         testID="connectButton"
       />

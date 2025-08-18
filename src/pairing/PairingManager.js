@@ -5,7 +5,6 @@ import EventEmitter from 'events';
 import TcpSockets from 'react-native-tcp-socket';
 import { get_modulus_exponent } from './pairing_utils.js';
 import { GlobalTLSManager, TLSRequestQueue } from '../network/index.js';
-import { TokenManager } from '../auth/TokenManager.js';
 
 //import RNFS from 'react-native-fs';
 
@@ -249,17 +248,9 @@ class PairingManager extends EventEmitter {
 							} else if (message.pairingSecretAck) {
 								console.log(this.host + ' Paired!');
 								
-								// CRITICAL: Capture authentication token from server
-								const authToken = message.pairingSecretAck.secret;
-								if (authToken && authToken.length > 0) {
-									console.log(`🔑 PairingManager: Received authentication token (${authToken.length} bytes): ${authToken.toString('hex').toUpperCase()}`);
-									
-									// Store token for RemoteManager to use
-									TokenManager.saveToken(this.host, authToken);
-									console.log(`✅ PairingManager: Authentication token stored for ${this.host}`);
-								} else {
-									console.error(`❌ PairingManager: No authentication token received in pairingSecretAck`);
-								}
+								// Pairing successful - certificate trust established
+								console.log(`✅ PairingManager: Pairing completed successfully for ${this.host}`);
+								console.log(`🔐 PairingManager: Client certificate is now trusted by TV`);
 								
 								this.connectionState = 'paired';
 								this.pairingSucceeded = true; // Mark pairing as successful before destroying connection

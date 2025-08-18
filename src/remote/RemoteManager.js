@@ -1,4 +1,5 @@
 import { RemoteMessageManager } from "./RemoteMessageManager.js";
+import { TLSRequestQueue } from "../network/TLSRequestQueue.js";
 import EventEmitter from "events";
 import {Buffer} from "buffer";
 import TcpSockets from 'react-native-tcp-socket';
@@ -14,12 +15,22 @@ class RemoteManager extends EventEmitter {
         this.error = null;
         this.remoteMessageManager = new RemoteMessageManager(systeminfo);
         this.isManualStop = false;
+        
+        // Initialize TLS retry queue for port 6466 connections
+        this.tlsQueue = new TLSRequestQueue();
+        
+        // Heartbeat monitoring for connection health
+        this.lastPingReceived = null;
+        this.heartbeatInterval = null;
+        this.isConnected = false;
     }
 
     async start() {
-        console.log(`🖥️  RemoteManager: Starting remote connection to ${this.host}:${this.port}`);
-        return new Promise((resolve, reject) => {
-
+        console.log(`🖥️  RemoteManager: Starting remote connection to ${this.host}:${this.port} with TLS retry logic`);
+        
+        try {
+            this.isManualStop = false;
+            
             let options = {
                 port: this.port,
                 host : this.host,
@@ -30,56 +41,83 @@ class RemoteManager extends EventEmitter {
                 androidKeyStore: this.certs.androidKeyStore,
                 certAlias: this.certs.certAlias,
                 keyAlias: this.certs.keyAlias,
-                //ca: require('../../../../client-selfsigned.crt'),
             };
             
-            console.log(`🔗 RemoteManager: Starting TLS connection to ${this.host}:${this.port}`);
-            this.isManualStop = false;
+            console.log(`🔗 RemoteManager: Using TLS retry queue for ${this.host}:${this.port}`);
             
-            // Use callback-only approach to avoid React Native TLS event conflicts
-            this.client = TcpSockets.connectTLS(options, () => {
-                console.log(`✅ RemoteManager: ${this.host}:${this.port} - Remote secureConnect successful, emitting 'ready'`);
-                this.emit('ready'); // Emit ready event to signal successful connection
-                resolve(true);
-            });
+            // Use TLS retry logic for robust port 6466 connections
+            const connection = await this.tlsQueue.createConnectionWithRetry(this.host, this.port, options);
+            
+            // Extract the underlying socket from PooledTLSConnection
+            this.client = connection.socket;
+            
+            console.log(`✅ RemoteManager: ${this.host}:${this.port} - Remote connection established with retry logic`);
+            
+            // Set up connection tracking
+            this.isConnected = true;
+            this.lastPingReceived = Date.now();
+            
+            // Start heartbeat monitoring
+            this.startHeartbeatMonitoring();
+            
+            // Set up socket event handlers
+            this.setupSocketHandlers();
+            
+            console.log(`✅ RemoteManager: ${this.host}:${this.port} - Remote ready, emitting 'ready' event`);
+            this.emit('ready'); // Emit ready event to signal successful connection
+            
+            return true;
+            
+        } catch (error) {
+            console.error(`❌ RemoteManager: ${this.host}:${this.port} - Connection failed after retries:`, error.message);
+            this.isConnected = false;
+            throw error;
+        }
+    }
+    
+    /**
+     * Set up socket event handlers for the established connection
+     */
+    setupSocketHandlers() {
+        this.client.on('timeout', () => {
+            console.log(`⏰ RemoteManager: ${this.host}:${this.port} - Socket timeout`);
+            this.client.destroy();
+        });
 
-            this.client.on('timeout', () => {
-                console.log('timeout');
-                this.client.destroy();
-            });
+        // Le ping est reçu toutes les 5 secondes
+        this.client.setTimeout(10000);
 
-            // Le ping est reçu toutes les 5 secondes
-            this.client.setTimeout(10000);
+        this.client.on('data', (data) => {
+            let buffer = Buffer.from(data);
+            this.chunks = Buffer.concat([this.chunks, buffer]);
 
-            this.client.on('data', (data) => {
-                let buffer = Buffer.from(data);
-                this.chunks = Buffer.concat([this.chunks, buffer]);
+            if(this.chunks.length > 0 && this.chunks.readInt8(0) === this.chunks.length - 1){
 
-                if(this.chunks.length > 0 && this.chunks.readInt8(0) === this.chunks.length - 1){
+                let message = this.remoteMessageManager.parse(this.chunks);
 
-                    let message = this.remoteMessageManager.parse(this.chunks);
+                if(!message.remotePingRequest){
+                    //console.log(this.host + " Receive : " + Array.from(this.chunks));
+                    console.log(this.host + " Receive : " + JSON.stringify(message.toJSON()));
+                }
 
-                    if(!message.remotePingRequest){
-                        //console.log(this.host + " Receive : " + Array.from(this.chunks));
-                        console.log(this.host + " Receive : " + JSON.stringify(message.toJSON()));
-                    }
-
-                    if(message.remoteConfigure){
-                        this.client.write(this.remoteMessageManager.createRemoteConfigure(
-                            622,
-                            "Build.MODEL",
-                            "Build.MANUFACTURER",
-                            1,
-                            "Build.VERSION.RELEASE",
-                            ));
-                        this.emit('ready');
-                    }
-                    else if(message.remoteSetActive){
-                        this.client.write(this.remoteMessageManager.createRemoteSetActive(622));
-                    }
-                    else if(message.remotePingRequest){
-                        this.client.write(this.remoteMessageManager.createRemotePingResponse(message.remotePingRequest.val1));
-                    }
+                if(message.remoteConfigure){
+                    this.client.write(this.remoteMessageManager.createRemoteConfigure(
+                        622,
+                        "Build.MODEL",
+                        "Build.MANUFACTURER",
+                        1,
+                        "Build.VERSION.RELEASE",
+                        ));
+                    this.emit('ready');
+                }
+                else if(message.remoteSetActive){
+                    this.client.write(this.remoteMessageManager.createRemoteSetActive(622));
+                }
+                else if(message.remotePingRequest){
+                    // Update heartbeat tracking on ping received
+                    this.lastPingReceived = Date.now();
+                    this.client.write(this.remoteMessageManager.createRemotePingResponse(message.remotePingRequest.val1));
+                }
                     else if(message.remoteImeKeyInject){
                         this.emit('current_app', message.remoteImeKeyInject.appInfo.appPackage);
                     }
@@ -119,19 +157,23 @@ class RemoteManager extends EventEmitter {
                     else{
                         console.log("What else ?");
                     }
-                    this.chunks = Buffer.from([]);
-                }
-            });
+                this.chunks = Buffer.from([]);
+            }
+        });
 
-            this.client.on('close', async (hasError) => {
-                console.log(`🚪 RemoteManager: ${this.host}:${this.port} - Remote connection closed, hasError: ${hasError}`);
-                
-                // Don't restart if it was manually stopped
-                if (this.isManualStop) {
-                    console.log('RemoteManager.close() after manual stop - not restarting');
-                    this.isManualStop = false; // Reset flag for future connections
-                    return;
-                }
+        this.client.on('close', async (hasError) => {
+            console.log(`🚪 RemoteManager: ${this.host}:${this.port} - Remote connection closed, hasError: ${hasError}`);
+            
+            // Update connection state and stop heartbeat monitoring
+            this.isConnected = false;
+            this.stopHeartbeatMonitoring();
+            
+            // Don't restart if it was manually stopped
+            if (this.isManualStop) {
+                console.log('RemoteManager.close() after manual stop - not restarting');
+                this.isManualStop = false; // Reset flag for future connections
+                return;
+            }
 
                 if(hasError){
                     console.log('RemoteManager.close() hasError');
@@ -171,12 +213,63 @@ class RemoteManager extends EventEmitter {
                 }
             });
 
-            this.client.on('error', (error) => {
-                console.error(`❌ RemoteManager: ${this.host}:${this.port} - Connection error:`, error.code, error.message);
-                this.error = error;
-            });
+        this.client.on('error', (error) => {
+            console.error(`❌ RemoteManager: ${this.host}:${this.port} - Connection error:`, error.code, error.message);
+            this.error = error;
+            this.isConnected = false;
         });
-
+    }
+    
+    /**
+     * Start proactive heartbeat monitoring for connection health
+     */
+    startHeartbeatMonitoring() {
+        console.log(`💓 RemoteManager: Starting heartbeat monitoring for ${this.host}:${this.port}`);
+        
+        // Clear any existing interval
+        this.stopHeartbeatMonitoring();
+        
+        this.heartbeatInterval = setInterval(() => {
+            if (!this.isConnected || this.isManualStop) {
+                return;
+            }
+            
+            const timeSinceLastPing = Date.now() - (this.lastPingReceived || Date.now());
+            
+            if (timeSinceLastPing > 15000) { // 15s without ping
+                console.warn(`💔 RemoteManager: ${this.host}:${this.port} - No ping received for ${Math.round(timeSinceLastPing/1000)}s - connection may be unhealthy`);
+                this.handleUnhealthyConnection();
+            } else {
+                console.log(`💓 RemoteManager: ${this.host}:${this.port} - Connection healthy (last ping ${Math.round(timeSinceLastPing/1000)}s ago)`);
+            }
+        }, 5000); // Check every 5s
+    }
+    
+    /**
+     * Stop heartbeat monitoring
+     */
+    stopHeartbeatMonitoring() {
+        if (this.heartbeatInterval) {
+            clearInterval(this.heartbeatInterval);
+            this.heartbeatInterval = null;
+            console.log(`💓 RemoteManager: Stopped heartbeat monitoring for ${this.host}:${this.port}`);
+        }
+    }
+    
+    /**
+     * Handle unhealthy connection (no ping received)
+     */
+    handleUnhealthyConnection() {
+        console.error(`💔 RemoteManager: ${this.host}:${this.port} - Connection unhealthy, triggering disconnect`);
+        
+        // Update connection state
+        this.isConnected = false;
+        
+        // Emit unpaired to trigger UI update for user to reconnect
+        this.emit('unpaired');
+        
+        // Clean up the connection
+        this.stop();
     }
 
     sendPower(){
@@ -199,6 +292,10 @@ class RemoteManager extends EventEmitter {
         console.log(`${this.host} RemoteManager.stop(): Cleaning up connection`);
         
         this.isManualStop = true;
+        this.isConnected = false;
+        
+        // Stop heartbeat monitoring
+        this.stopHeartbeatMonitoring();
         
         // Close and clean up TCP client socket
         if (this.client) {

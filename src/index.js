@@ -3,7 +3,7 @@ import { PairingManager } from "./pairing/PairingManager.js"
 import { RemoteManager } from "./remote/RemoteManager.js";
 import { RemoteMessageManager } from "./remote/RemoteMessageManager.js";
 import { GlobalTLSManager } from "./network/index.js";
-import { TokenManager } from "./auth/TokenManager.js";
+import { CertificateManager } from "./auth/CertificateManager.js";
 import { SecureStorage } from "./storage/SecureStorage.js";
 import EventEmitter from "events";
 
@@ -47,62 +47,91 @@ export class AndroidRemote extends EventEmitter {
 
         console.log('AndroidRemote.start()');
         
-        // PHASE 4: Check for existing authentication token
-        console.log('🔍 AndroidRemote: Checking for existing authentication token...');
+        // PHASE 5: Smart Connect Button with Intelligent Port Routing
+        console.log('🔍 AndroidRemote: Starting smart connection routing...');
         
-        try {
-            // Try to load existing token from secure storage
-            console.log('✅ AndroidRemote: trying to load existing token from host:', this.host);
-            const existingToken = await SecureStorage.loadAuthToken(this.host);
-            
-            if (existingToken) {
-                console.log('✅ AndroidRemote: Found existing authentication token, skipping pairing');
-                console.log(`🔑 AndroidRemote: Token: ${existingToken.toString('hex').toUpperCase()}`);
+        // Check for existing client certificate
+        const existingCertData = await SecureStorage.loadCertificate(this.host);
+        
+        const isValid = CertificateManager.isValidCertificateData(existingCertData);
+        console.log('🔍 AndroidRemote: Certificate validation result:', isValid);
+        
+        if (existingCertData && isValid) {
+            try {
+                // Certificate exists - try port 6466 (remote) first
+                this.emit('trying-remote');
+                console.log('✅ AndroidRemote: Found existing certificate - attempting remote connection (port 6466)');
+                console.log(`🔑 AndroidRemote: Certificate: ${existingCertData.certificate.substring(0, 100)}...`);
                 
-                // Generate fresh certificate for this session (no persistence needed)
-                this.cert = CertificateGenerator.generateFull(this.service_name);
+                return await this.attemptRemoteConnection(existingCertData);
                 
-                // Store token in memory for RemoteManager
-                TokenManager.saveToken(this.host, existingToken);
-                
-                // Skip pairing - go directly to RemoteManager
-                return await this.startRemoteManager();
-            } else {
-                console.log('⚠️  AndroidRemote: No existing token found, starting pairing process');
+            } catch (error) {
+                // Certificate invalid - clear and fall back to pairing
+                console.error('❌ AndroidRemote: Remote connection failed - certificate may be invalid:', error.message);
+                this.emit('falling-back-to-pairing');
+                await this.clearStoredCredentials();
+                return await this.startPairingFlow();
             }
-        } catch (error) {
-            console.error('❌ AndroidRemote: Error checking existing token:', error);
-            console.log('🔄 AndroidRemote: Falling back to pairing process');
+        } else {
+            // No certificate - start fresh pairing
+            console.log('⚠️  AndroidRemote: No existing certificate found - starting pairing flow (port 6467)');
+            return await this.startPairingFlow();
+        }
+    }
+    
+    /**
+     * Attempt remote connection using stored certificate (port 6466)
+     */
+    async attemptRemoteConnection(existingCertData) {
+        console.log('🚀 AndroidRemote: Attempting remote connection with stored certificate...');
+        
+        // Use stored certificate
+        this.cert = {
+            key: existingCertData.privateKey,
+            cert: existingCertData.certificate,
+            androidKeyStore: this.cert.androidKeyStore,
+            certAlias: this.cert.certAlias,
+            keyAlias: this.cert.keyAlias,
+        };
+        
+        // Store certificate in memory for RemoteManager  
+        CertificateManager.saveCertificate(this.host, existingCertData.certificate, existingCertData.privateKey);
+        
+        // Start RemoteManager directly with stored certificate
+        return await this.startRemoteManager();
+    }
+    
+    /**
+     * Start fresh pairing flow (port 6467)
+     */
+    async startPairingFlow() {
+        console.log('🔗 AndroidRemote: Starting fresh pairing flow...');
+        
+        // Generate fresh certificate for pairing
+        this.cert = CertificateGenerator.generateFull(this.service_name);
+
+        console.log('Before creating PairingManager');
+        // Clean up any existing pairing manager
+        if (this.pairingManager) {
+            this.pairingManager.removeAllListeners();
+            this.pairingManager = null;
+        }
+        this.pairingManager = new PairingManager(
+            this.host,
+            this.pairing_port,
+            this.cert,
+            this.service_name,
+            this.systeminfo);
+
+        this.pairingManager.on('secret', () => this.emit('secret'));
+
+        let paired = await this.pairingManager.start();
+        if (!paired) {
+            return;
         }
         
-        // No existing credentials - proceed with pairing
-        if (!this.cert || !this.cert.key || !this.cert.cert) {
-
-            this.cert = CertificateGenerator.generateFull(this.service_name);
-
-            console.log('Before creating PairingManager');
-            // Clean up any existing pairing manager
-            if (this.pairingManager) {
-                this.pairingManager.removeAllListeners();
-                this.pairingManager = null;
-            }
-            this.pairingManager = new PairingManager(
-                this.host,
-                this.pairing_port,
-                this.cert,
-                this.service_name,
-                this.systeminfo);
-
-            this.pairingManager.on('secret', () => this.emit('secret'));
-
-            let paired = await this.pairingManager.start();
-            if (!paired) {
-                return;
-            }
-            
-            // Save credentials after successful pairing
-            await this.saveCredentialsAfterPairing();
-        }
+        // Save credentials after successful pairing
+        await this.saveCredentialsAfterPairing();
 
         return await this.startRemoteManager();
     }
@@ -138,27 +167,29 @@ export class AndroidRemote extends EventEmitter {
     }
     
     /**
-     * Save authentication token after successful pairing
+     * Save client certificate after successful pairing
      */
     async saveCredentialsAfterPairing() {
         try {
-            console.log('💾 AndroidRemote: Saving authentication token after successful pairing...');
+            console.log('💾 AndroidRemote: Saving client certificate after successful pairing...');
             
-            // Get authentication token from TokenManager (stored by PairingManager)
-            const authToken = TokenManager.getToken(this.host);
-            if (!authToken) {
-                console.error('❌ AndroidRemote: No authentication token found after pairing');
+            // Save the client certificate and private key used for pairing
+            if (!this.cert || !this.cert.cert || !this.cert.key) {
+                console.error('❌ AndroidRemote: No client certificate found after pairing');
                 return;
             }
             
-            // Save only the authentication token (certificates are generated fresh each session)
-            await SecureStorage.saveAuthToken(this.host, authToken);
+            // Save the certificate and private key for future connections
+            await SecureStorage.saveCertificate(this.host, this.cert.cert, this.cert.key);
             
-            console.log('✅ AndroidRemote: Authentication token saved successfully');
-            console.log(`🔐 AndroidRemote: Token (${authToken.length} bytes) stored for ${this.host}`);
+            // Also store in memory for immediate use
+            CertificateManager.saveCertificate(this.host, this.cert.cert, this.cert.key);
+            
+            console.log('✅ AndroidRemote: Client certificate saved successfully');
+            console.log(`🔐 AndroidRemote: Certificate (${this.cert.cert.length} + ${this.cert.key.length} chars) stored for ${this.host}`);
             
         } catch (error) {
-            console.error('❌ AndroidRemote: Failed to save authentication token after pairing:', error);
+            console.error('❌ AndroidRemote: Failed to save client certificate after pairing:', error);
             // Don't throw - pairing was successful, storage failure is not critical
         }
     }
@@ -191,19 +222,19 @@ export class AndroidRemote extends EventEmitter {
     }
     
     /**
-     * Clear stored authentication token (for testing or re-pairing)
+     * Clear stored client certificate (for testing or re-pairing)
      */
     async clearStoredCredentials() {
         try {
-            console.log('🗑️ AndroidRemote: Clearing stored authentication token...');
+            console.log('🗑️ AndroidRemote: Clearing stored client certificate...');
             
-            // Remove only the authentication token (certificates are not persisted)
-            await SecureStorage.removeAuthToken(this.host);
-            TokenManager.removeToken(this.host);
+            // Remove the stored certificate and private key
+            await SecureStorage.removeCertificate(this.host);
+            CertificateManager.clearCertificate(this.host);
             
-            console.log('✅ AndroidRemote: Stored authentication token cleared');
+            console.log('✅ AndroidRemote: Stored client certificate cleared');
         } catch (error) {
-            console.error('❌ AndroidRemote: Failed to clear authentication token:', error);
+            console.error('❌ AndroidRemote: Failed to clear client certificate:', error);
         }
     }
 

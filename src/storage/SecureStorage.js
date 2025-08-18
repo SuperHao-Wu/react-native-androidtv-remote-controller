@@ -1,10 +1,10 @@
 import * as Keychain from 'react-native-keychain';
 
 /**
- * Secure storage for Android TV remote authentication tokens.
+ * Secure storage for Android TV remote client certificates.
  * 
- * Uses iOS Keychain for authentication tokens only - no certificate storage.
- * Certificates are generated fresh each time (no client identity persistence needed).
+ * Uses iOS Keychain for persistent client certificate storage. 
+ * Certificates are reused for authentication matching the working Python implementation.
  */
 export class SecureStorage {
   /**
@@ -17,17 +17,24 @@ export class SecureStorage {
   }
 
   /**
-   * Store authentication token securely in iOS Keychain
+   * Store client certificate and private key securely in iOS Keychain
    * @param {string} host - TV host address (e.g., "192.168.1.100") 
-   * @param {Buffer} token - Authentication token from pairing process
+   * @param {string} certificatePem - Client certificate in PEM format
+   * @param {string} privateKeyPem - Private key in PEM format
    * @param {Object} opts - Options for biometric requirements
    */
-  static async saveAuthToken(host, token, opts = {}) {
+  static async saveCertificate(host, certificatePem, privateKeyPem, opts = {}) {
     try {
-      const tokenBase64 = token.toString('base64');
       const service = this.serviceForHost(host);
       
-      console.log(`🔐 SecureStorage: Saving auth token for ${host} (${token.length} bytes)`);
+      console.log(`🔐 SecureStorage: Saving client certificate for ${host} (${certificatePem.length} + ${privateKeyPem.length} chars)`);
+
+      // Combine certificate and private key for storage
+      const certData = JSON.stringify({
+        certificate: certificatePem,
+        privateKey: privateKeyPem,
+        timestamp: Date.now()
+      });
 
       const options = {
         service,
@@ -40,26 +47,26 @@ export class SecureStorage {
         securityLevel: Keychain.SECURITY_LEVEL.SECURE_HARDWARE,
       };
 
-      await Keychain.setInternetCredentials(service, 'auth-token', tokenBase64, options);
+      await Keychain.setInternetCredentials(service, 'client-cert', certData, options);
       
-      console.log(`✅ SecureStorage: Auth token saved successfully for ${host}`);
+      console.log(`✅ SecureStorage: Client certificate saved successfully for ${host}`);
     } catch (error) {
-      console.error(`❌ SecureStorage: Failed to save auth token for ${host}:`, error);
+      console.error(`❌ SecureStorage: Failed to save client certificate for ${host}:`, error);
       throw error;
     }
   }
   
   /**
-   * Load authentication token from iOS Keychain
+   * Load client certificate and private key from iOS Keychain
    * @param {string} host - TV host address
    * @param {Object} opts - Options for biometric prompt customization
-   * @returns {Buffer|null} Authentication token or null if not found
+   * @returns {Object|null} Certificate data {certificate, privateKey, timestamp} or null if not found
    */
-  static async loadAuthToken(host, opts = {}) {
+  static async loadCertificate(host, opts = {}) {
     try {
       const service = this.serviceForHost(host);
       
-      console.log(`🔍 SecureStorage: Loading auth token for ${host}`);
+      console.log(`🔍 SecureStorage: Loading client certificate for ${host}`);
 
       const queryOptions = {
         // Custom prompt for biometric authentication if needed
@@ -71,35 +78,35 @@ export class SecureStorage {
       const credentials = await Keychain.getInternetCredentials(service, queryOptions);
       console.log(`🔍 SecureStorage: Loaded credentials for ${host}:`, !!credentials, credentials?.username);
       
-      if (!credentials || credentials.username !== 'auth-token') {
-        console.log(`⚠️  SecureStorage: No auth token found for ${host}`);
+      if (!credentials || credentials.username !== 'client-cert') {
+        console.log(`⚠️  SecureStorage: No client certificate found for ${host}`);
         return null;
       }
 
-      const token = Buffer.from(credentials.password, 'base64');
-      console.log(`✅ SecureStorage: Auth token loaded for ${host} (${token.length} bytes)`);
-      return token;
+      const certData = JSON.parse(credentials.password);
+      console.log(`✅ SecureStorage: Client certificate loaded for ${host} (${certData.certificate.length} chars)`);
+      return certData;
     } catch (error) {
-      console.error(`❌ SecureStorage: Failed to load auth token for ${host}:`, error);
+      console.error(`❌ SecureStorage: Failed to load client certificate for ${host}:`, error);
       return null;
     }
   }
   
   /**
-   * Remove authentication token from iOS Keychain  
+   * Remove client certificate from iOS Keychain  
    * @param {string} host - TV host address
    */
-  static async removeAuthToken(host) {
+  static async removeCertificate(host) {
     try {
       const service = this.serviceForHost(host);
       
-      console.log(`🗑️ SecureStorage: Removing auth token for ${host}`);
+      console.log(`🗑️ SecureStorage: Removing client certificate for ${host}`);
       
       await Keychain.resetInternetCredentials(service);
       
-      console.log(`✅ SecureStorage: Auth token removed for ${host}`);
+      console.log(`✅ SecureStorage: Client certificate removed for ${host}`);
     } catch (error) {
-      console.error(`❌ SecureStorage: Failed to remove auth token for ${host}:`, error);
+      console.error(`❌ SecureStorage: Failed to remove client certificate for ${host}:`, error);
       throw error;
     }
   }
@@ -125,19 +132,21 @@ export class SecureStorage {
    */
   static async getStorageStatus(host) {
     try {
-      const hasToken = (await this.loadAuthToken(host)) !== null;
+      const certData = await this.loadCertificate(host);
+      const hasCertificate = certData !== null;
       const biometrics = await this.supportsBiometrics();
       
       return {
         host,
-        hasAuthToken: hasToken,
+        hasCertificate: hasCertificate,
+        certificateTimestamp: certData?.timestamp,
         supportsBiometrics: biometrics,
         timestamp: new Date().toISOString(),
       };
     } catch (error) {
       return {
         host,
-        hasAuthToken: false,
+        hasCertificate: false,
         supportsBiometrics: false,
         error: error.message,
         timestamp: new Date().toISOString(),
