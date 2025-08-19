@@ -2,7 +2,7 @@
  * In-memory certificate manager for Android TV client certificates.
  * 
  * Manages client certificates and private keys during app session.
- * Certificates are loaded from SecureStorage and cached in memory for performance.
+ * Provides session-based certificate storage with automatic cleanup on app restart.
  */
 export class CertificateManager {
   // Static certificate storage - shared across all AndroidRemote instances

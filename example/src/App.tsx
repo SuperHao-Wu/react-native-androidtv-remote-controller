@@ -15,7 +15,7 @@ import {
 import { Picker } from '@react-native-picker/picker';
 import { PairingDialog } from './components/PairingDialog';
 import RNRemote from 'react-native-androidtv-remote';
-const { AndroidRemote, RemoteKeyCode, RemoteDirection, SecureStorage } = RNRemote;
+const { AndroidRemote, RemoteKeyCode, RemoteDirection, CertificateManager } = RNRemote;
 import { GoogleCastDiscovery, DeviceInfo } from './services/GoogleCastDiscovery';
 import { LaunchArguments } from 'react-native-launch-arguments';
 import {Buffer} from 'buffer';
@@ -120,6 +120,50 @@ function App(): React.JSX.Element {
     });
   };
 
+  // Clear memory-stored certificate to force fresh pairing
+  const handleClearCertificate = async () => {
+    if (!selectedDevice) {
+      Alert.alert('Error', 'Please select a device first');
+      return;
+    }
+
+    try {
+      console.log(`🗑️ Clearing memory certificate for ${selectedDevice}...`);
+      console.log(`🔍 Debug: Selected device hostname: "${selectedDevice}"`);
+      
+      // Clear from memory storage
+      const wasCleared = CertificateManager.clearCertificate(selectedDevice);
+      
+      // Verify it was actually cleared
+      const checkCert = CertificateManager.getCertificate(selectedDevice);
+      console.log(`🔍 Debug: Certificate check after removal:`, !!checkCert);
+      console.log(`🔍 Debug: CertificateManager.clearCertificate returned:`, wasCleared);
+      
+      // Also clear any existing AndroidRemote connection
+      const existingRemote = androidRemotesRef.current.get(selectedDevice);
+      if (existingRemote) {
+        console.log('🧹 Cleaning up existing AndroidRemote connection...');
+        try {
+          existingRemote.stop();
+          existingRemote.removeAllListeners();
+        } catch (error) {
+          console.log('⚠️ Error during cleanup:', error);
+        }
+        androidRemotesRef.current.delete(selectedDevice);
+      }
+      
+      // Reset connection status
+      setConnectionStatuses((prev) => ({ ...prev, [selectedDevice]: 'Disconnected' }));
+      
+      console.log('✅ Memory certificate cleared successfully');
+      Alert.alert('Certificate Cleared', `Memory certificate cleared for ${selectedDevice}. Next connection will require fresh pairing.`);
+      
+    } catch (error) {
+      console.error('❌ Failed to clear certificate:', error);
+      Alert.alert('Error', `Failed to clear certificate: ${error.message}`);
+    }
+  };
+
   // E2E Test Mode: Auto-populate mock device and pre-populate client certificate
   useEffect(() => {
     if (E2E_TEST_MODE && E2E_HOST && E2E_CERTIFICATE && E2E_PRIVATE_KEY) {
@@ -127,12 +171,12 @@ function App(): React.JSX.Element {
       
       const setupE2EMode = async () => {
         try {
-          // Step 1: Store the pre-generated client certificate in keychain
-          console.log(`🔐 E2E_TEST_MODE: Pre-populating client certificate for ${E2E_HOST}`);
+          // Step 1: Store the pre-generated client certificate in memory
+          console.log(`🔐 E2E_TEST_MODE: Pre-populating client certificate in memory for ${E2E_HOST}`);
           const certificatePem = Buffer.from(E2E_CERTIFICATE as string, 'base64').toString('utf8');
           const privateKeyPem = Buffer.from(E2E_PRIVATE_KEY as string, 'base64').toString('utf8');
-          await SecureStorage.saveCertificate(E2E_HOST as string, certificatePem, privateKeyPem);
-          console.log(`✅ E2E_TEST_MODE: Client certificate stored in keychain (${certificatePem.length} + ${privateKeyPem.length} chars)`);
+          CertificateManager.saveCertificate(E2E_HOST as string, certificatePem, privateKeyPem);
+          console.log(`✅ E2E_TEST_MODE: Client certificate stored in memory (${certificatePem.length} + ${privateKeyPem.length} chars)`);
           
           // Step 2: Set up mock device 
           const mockDevice: DeviceInfo = {
@@ -143,7 +187,7 @@ function App(): React.JSX.Element {
           
           setDevices([mockDevice]);
           setSelectedDevice(mockDevice.host || '');
-          console.log('✅ E2E_TEST_MODE: Mock device and client certificate ready for testing');
+          console.log('✅ E2E_TEST_MODE: Mock device and memory certificate ready for testing');
           
         } catch (error) {
           console.error('❌ E2E_TEST_MODE: Failed to setup test environment:', error);
@@ -304,9 +348,9 @@ function App(): React.JSX.Element {
           model: 'default-model',
         },
         cert: {
-          // AndroidRemote now handles certificate loading from SecureStorage internally
-          key: null, // Will be loaded from SecureStorage by AndroidRemote
-          cert: null, // Will be loaded from SecureStorage by AndroidRemote
+          // AndroidRemote now handles certificate loading from memory via CertificateManager
+          key: null, // Will be loaded from memory by AndroidRemote
+          cert: null, // Will be loaded from memory by AndroidRemote
           androidKeyStore: 'AndroidKeyStore',
           certAlias: 'remotectl-atv-cert',
           keyAlias: 'remotectl-atv',
@@ -510,6 +554,16 @@ function App(): React.JSX.Element {
         testID="connectButton"
       />
 
+      <View style={styles.buttonSpacer} />
+      
+      <Button
+        title="Clear Certificate"
+        onPress={handleClearCertificate}
+        disabled={!selectedDevice}
+        testID="clearCertificateButton"
+        color="#FF6B35"
+      />
+      
       <View style={styles.buttonSpacer} />
       <Button
         title="Mute"

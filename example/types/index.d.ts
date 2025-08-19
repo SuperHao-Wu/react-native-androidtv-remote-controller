@@ -48,17 +48,22 @@ declare module 'react-native-androidtv-remote' {
   export const RemoteKeyCode: Record<string, number>;
   export const RemoteDirection: { SHORT: number; LONG: number };
 
-  export class SecureStorage {
-    static saveAuthToken(host: string, token: any): Promise<void>;
-    static loadAuthToken(host: string): Promise<any>;
-    static removeAuthToken(host: string): Promise<void>;
+  export class CertificateManager {
+    static saveCertificate(host: string, certificatePem: string, privateKeyPem: string): boolean;
+    static getCertificate(host: string): object | null;
+    static hasCertificate(host: string): boolean;
+    static clearCertificate(host: string): boolean;
+    static clearAllCertificates(): void;
+    static getAllHosts(): string[];
+    static isValidCertificateData(certData: object): boolean;
+    static getCertificateInfo(host: string): object;
   }
 
   const _default: {
     AndroidRemote: typeof AndroidRemote;
     RemoteKeyCode: typeof RemoteKeyCode;
     RemoteDirection: typeof RemoteDirection;
-    SecureStorage: typeof SecureStorage;
+    CertificateManager: typeof CertificateManager;
   };
   export default _default;
 }

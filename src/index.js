@@ -4,10 +4,9 @@ import { RemoteManager } from "./remote/RemoteManager.js";
 import { RemoteMessageManager } from "./remote/RemoteMessageManager.js";
 import { GlobalTLSManager } from "./network/index.js";
 import { CertificateManager } from "./auth/CertificateManager.js";
-import { SecureStorage } from "./storage/SecureStorage.js";
 import EventEmitter from "events";
 
-export { SecureStorage };
+export { CertificateManager };
 
 export class AndroidRemote extends EventEmitter {
     constructor(host, options) {
@@ -50,11 +49,11 @@ export class AndroidRemote extends EventEmitter {
         // PHASE 5: Smart Connect Button with Intelligent Port Routing
         console.log('🔍 AndroidRemote: Starting smart connection routing...');
         
-        // Check for existing client certificate
-        const existingCertData = await SecureStorage.loadCertificate(this.host);
+        // Check for existing client certificate in memory only (skip iOS Keychain)
+        const existingCertData = CertificateManager.getCertificate(this.host);
         
-        const isValid = CertificateManager.isValidCertificateData(existingCertData);
-        console.log('🔍 AndroidRemote: Certificate validation result:', isValid);
+        const isValid = existingCertData && CertificateManager.isValidCertificateData(existingCertData);
+        console.log('🔍 AndroidRemote: Memory certificate validation result:', isValid);
         
         if (existingCertData && isValid) {
             try {
@@ -66,15 +65,15 @@ export class AndroidRemote extends EventEmitter {
                 return await this.attemptRemoteConnection(existingCertData);
                 
             } catch (error) {
-                // Certificate invalid - clear and fall back to pairing
+                // Certificate invalid - clear memory and fall back to pairing
                 console.error('❌ AndroidRemote: Remote connection failed - certificate may be invalid:', error.message);
                 this.emit('falling-back-to-pairing');
-                await this.clearStoredCredentials();
+                CertificateManager.clearCertificate(this.host);
                 return await this.startPairingFlow();
             }
         } else {
-            // No certificate - start fresh pairing
-            console.log('⚠️  AndroidRemote: No existing certificate found - starting pairing flow (port 6467)');
+            // No certificate in memory - start fresh pairing
+            console.log('⚠️  AndroidRemote: No certificate in memory - starting pairing flow (port 6467)');
             return await this.startPairingFlow();
         }
     }
@@ -167,11 +166,11 @@ export class AndroidRemote extends EventEmitter {
     }
     
     /**
-     * Save client certificate after successful pairing
+     * Save client certificate after successful pairing (memory-only)
      */
     async saveCredentialsAfterPairing() {
         try {
-            console.log('💾 AndroidRemote: Saving client certificate after successful pairing...');
+            console.log('💾 AndroidRemote: Saving client certificate to memory after successful pairing...');
             
             // Save the client certificate and private key used for pairing
             if (!this.cert || !this.cert.cert || !this.cert.key) {
@@ -179,17 +178,15 @@ export class AndroidRemote extends EventEmitter {
                 return;
             }
             
-            // Save the certificate and private key for future connections
-            await SecureStorage.saveCertificate(this.host, this.cert.cert, this.cert.key);
-            
-            // Also store in memory for immediate use
+            // Store in memory only (skip iOS Keychain due to persistence issues)
             CertificateManager.saveCertificate(this.host, this.cert.cert, this.cert.key);
             
-            console.log('✅ AndroidRemote: Client certificate saved successfully');
-            console.log(`🔐 AndroidRemote: Certificate (${this.cert.cert.length} + ${this.cert.key.length} chars) stored for ${this.host}`);
+            console.log('✅ AndroidRemote: Client certificate saved to memory successfully');
+            console.log(`🔐 AndroidRemote: Certificate (${this.cert.cert.length} + ${this.cert.key.length} chars) stored in memory for ${this.host}`);
+            console.log('📝 AndroidRemote: Certificate will be available until app restart (session-based storage)');
             
         } catch (error) {
-            console.error('❌ AndroidRemote: Failed to save client certificate after pairing:', error);
+            console.error('❌ AndroidRemote: Failed to save client certificate to memory after pairing:', error);
             // Don't throw - pairing was successful, storage failure is not critical
         }
     }
@@ -222,19 +219,18 @@ export class AndroidRemote extends EventEmitter {
     }
     
     /**
-     * Clear stored client certificate (for testing or re-pairing)
+     * Clear memory-stored client certificate (for testing or re-pairing)
      */
     async clearStoredCredentials() {
         try {
-            console.log('🗑️ AndroidRemote: Clearing stored client certificate...');
+            console.log('🗑️ AndroidRemote: Clearing memory-stored client certificate...');
             
-            // Remove the stored certificate and private key
-            await SecureStorage.removeCertificate(this.host);
+            // Remove the certificate from memory (skip iOS Keychain due to reliability issues)
             CertificateManager.clearCertificate(this.host);
             
-            console.log('✅ AndroidRemote: Stored client certificate cleared');
+            console.log('✅ AndroidRemote: Memory-stored client certificate cleared');
         } catch (error) {
-            console.error('❌ AndroidRemote: Failed to clear client certificate:', error);
+            console.error('❌ AndroidRemote: Failed to clear memory client certificate:', error);
         }
     }
 
@@ -278,5 +274,5 @@ export default {
     CertificateGenerator,
     RemoteKeyCode,
     RemoteDirection,
-    SecureStorage,
+    CertificateManager,
 }

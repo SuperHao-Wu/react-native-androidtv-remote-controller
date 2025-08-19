@@ -609,3 +609,4 @@ The project employs a multi-layered testing approach:
 3. **Native device tests** with Appium for real-world validation on iPhone hardware
 
 This comprehensive testing ensures the library works correctly across different environments and device configurations.
+- to memorize

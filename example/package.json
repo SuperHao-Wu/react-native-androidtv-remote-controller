@@ -24,7 +24,6 @@
 		"react-native": "0.77.0",
 		"react-native-androidtv-remote": "file:../dist",
 		"react-native-fs": "^2.20.0",
-		"react-native-keychain": "^10.0.0",
 		"react-native-launch-arguments": "^4.1.0",
 		"react-native-modpow": "^1.1.0",
 		"react-native-tcp-socket": "file:../react-native-tcp-socket",
