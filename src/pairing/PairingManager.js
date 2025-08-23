@@ -27,6 +27,9 @@ class PairingManager extends EventEmitter {
 		// Connection pooling infrastructure
 		this.tlsManager = GlobalTLSManager.getInstance();
 		this.tlsRequestQueue = new TLSRequestQueue();
+		// Progress tracking
+		this.onProgressCallback = null;
+		this.currentAbortController = null;
 	}
 
 	/*
@@ -99,8 +102,25 @@ class PairingManager extends EventEmitter {
 			clearTimeout(this.connectionTimeout);
 			this.connectionTimeout = null;
 		}
-		this.client.destroy(new Error('Pairing canceled'));
+		
+		// Cancel ongoing TLS connection attempt if any
+		if (this.currentAbortController) {
+			this.currentAbortController.abort();
+			this.currentAbortController = null;
+		}
+		
+		// Cancel at TLS queue level
+		this.tlsRequestQueue.cancelConnection(this.host, this.port);
+		
+		if (this.client) {
+			this.client.destroy(new Error('Pairing canceled'));
+		}
 		return false;
+	}
+	
+	// Set progress callback for connection tracking
+	setProgressCallback(callback) {
+		this.onProgressCallback = callback;
 	}
 
 	// Phase 1: Add utility method for delays
@@ -161,7 +181,23 @@ class PairingManager extends EventEmitter {
 			try {
 				// 🔧 FIX: Use TLSRequestQueue with retry logic instead of direct connection
 				console.log(`🎯 PairingManager: [${this.instanceId}] ${this.host} 🔄 PairingManager: Using TLSRequestQueue with retry logic`);
-				const pooledConnection = await this.tlsRequestQueue.createConnectionWithRetry(this.host, this.port, options);
+				
+				// Set up progress callback for connection retry tracking
+				const onProgress = (progress) => {
+					console.log(`🔄 PairingManager: [${this.instanceId}] Connection progress:`, progress);
+					if (this.onProgressCallback) {
+						this.onProgressCallback(progress);
+					}
+				};
+				
+				// Create abort controller for cancellation
+				const abortController = new AbortController();
+				this.currentAbortController = abortController;
+				
+				const pooledConnection = await this.tlsRequestQueue.createConnectionWithRetry(this.host, this.port, options, {
+					onProgress,
+					abortSignal: abortController.signal
+				});
 				
 				// Extract the underlying TLS socket from the pooled connection
 				this.client = pooledConnection.socket;

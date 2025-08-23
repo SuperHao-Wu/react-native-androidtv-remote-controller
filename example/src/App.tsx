@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { PairingDialog } from './components/PairingDialog';
+import { ConnectionDialog } from './components/ConnectionDialog';
 import RNRemote from 'react-native-androidtv-remote';
 const { AndroidRemote, RemoteKeyCode, RemoteDirection, CertificateManager } = RNRemote;
 import { GoogleCastDiscovery, DeviceInfo } from './services/GoogleCastDiscovery';
@@ -46,6 +47,8 @@ console.log('🧪 E2E_PRIVATE_KEY length:', E2E_PRIVATE_KEY ? (E2E_PRIVATE_KEY a
 function App(): React.JSX.Element {
   const [connectionStatuses, setConnectionStatuses] = useState<{ [host: string]: string }>({});
   const [showPairingDialog, setShowPairingDialog] = useState(false);
+  const [showConnectionDialog, setShowConnectionDialog] = useState(false);
+  const [connectionProgress, setConnectionProgress] = useState<any>(null);
   const [scanning, setScanning] = useState(false);
   const [devices, setDevices] = useState<DeviceInfo[]>([]);
   const [selectedDevice, setSelectedDevice] = useState<string>('');
@@ -361,6 +364,25 @@ function App(): React.JSX.Element {
       const androidRemote = new AndroidRemote(selectedDevice, options);
       androidRemotesRef.current.set(selectedDevice, androidRemote);
 
+      // Set up progress tracking for TLS connection attempts
+      const handleConnectionProgress = (progress: any) => {
+        console.log('📊 Connection progress:', progress);
+        setConnectionProgress(progress);
+        
+        // Show connection dialog when retries start
+        if (progress.attempt > 1 && !showConnectionDialog) {
+          setShowConnectionDialog(true);
+        }
+      };
+
+      // Set progress callbacks on both managers
+      if (androidRemote.pairingManager) {
+        androidRemote.pairingManager.setProgressCallback(handleConnectionProgress);
+      }
+      if (androidRemote.remoteManager) {
+        androidRemote.remoteManager.setProgressCallback(handleConnectionProgress);
+      }
+
       // Set up enhanced event listeners for smart connection UI updates
       
       // Smart connection routing events
@@ -404,6 +426,11 @@ function App(): React.JSX.Element {
         console.log('AndroidRemote: ready event received');
         // Certificate storage is now handled automatically by AndroidRemote
         setConnectionStatuses((prev) => ({ ...prev, [selectedDevice]: 'Connected' }));
+        
+        // Hide connection dialog on successful connection
+        setShowConnectionDialog(false);
+        setConnectionProgress(null);
+        
         // UI feedback via status and enabled Mute button is sufficient - no alert needed
       });
 
@@ -585,6 +612,26 @@ function App(): React.JSX.Element {
         visible={showPairingDialog}
         onSubmit={handlePairingCodeSubmit}
         onCancel={() => handlePairingCodeSubmit(null)}
+      />
+
+      <ConnectionDialog
+        visible={showConnectionDialog}
+        progress={connectionProgress}
+        onCancel={() => {
+          const currentRemote = androidRemotesRef.current.get(selectedDevice);
+          if (currentRemote) {
+            // Cancel both pairing and remote manager connections
+            if (currentRemote.pairingManager?.cancelPairing) {
+              currentRemote.pairingManager.cancelPairing();
+            }
+            if (currentRemote.remoteManager?.cancelConnection) {
+              currentRemote.remoteManager.cancelConnection();
+            }
+          }
+          setShowConnectionDialog(false);
+          setConnectionProgress(null);
+          setConnectionStatuses((prev) => ({ ...prev, [selectedDevice]: 'Disconnected' }));
+        }}
       />
     </SafeAreaView>
   );

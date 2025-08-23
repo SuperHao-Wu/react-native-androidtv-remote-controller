@@ -9,21 +9,28 @@ console.log('🔍 TLSRequestQueue: DEBUG - TcpSockets.connectTLS type:', typeof 
 class TLSRequestQueue {
     constructor() {
         this.retryAttempts = new Map(); // hostPort -> retry count for tracking
-        this.maxRetries = 4; // Maximum retry attempts
+        this.maxRetries = Infinity; // Infinite retries by default
         this.baseDelay = 1000; // 1 second base delay (more conservative for TLS failures)
         this.maxDelay = 10000; // 10 second maximum delay
+        this.activeConnections = new Map(); // hostPort -> { controller, onProgress } for cancellation
     }
     
-    async createConnectionWithRetry(host, port, connectOptions) {
+    async createConnectionWithRetry(host, port, connectOptions, options = {}) {
         const hostPort = `${host}:${port}`;
         const requestId = Math.random().toString(36).substr(2, 8);
+        const { onProgress, abortSignal } = options;
+        
+        // Support custom maxRetries, default to infinite
+        const maxRetries = options.maxRetries !== undefined ? options.maxRetries : this.maxRetries;
+        const isInfinite = maxRetries === Infinity;
         
         console.log(`🔄 TLSRequestQueue: [${requestId}] ======================================`);
         console.log(`🔄 TLSRequestQueue: [${requestId}] STARTING RETRY CONNECTION PROCESS`);
         console.log(`🔄 TLSRequestQueue: [${requestId}] Target: ${hostPort}`);
-        console.log(`🔄 TLSRequestQueue: [${requestId}] Max retries: ${this.maxRetries}`);
+        console.log(`🔄 TLSRequestQueue: [${requestId}] Max retries: ${isInfinite ? 'INFINITE' : maxRetries}`);
         console.log(`🔄 TLSRequestQueue: [${requestId}] Base delay: ${this.baseDelay}ms`);
         console.log(`🔄 TLSRequestQueue: [${requestId}] Max delay: ${this.maxDelay}ms`);
+        console.log(`🔄 TLSRequestQueue: [${requestId}] Cancellable: ${!!abortSignal}`);
         console.log(`🔄 TLSRequestQueue: [${requestId}] ======================================`);
         
         // Initialize retry count for this host:port
@@ -31,23 +38,82 @@ class TLSRequestQueue {
             this.retryAttempts.set(hostPort, 0);
         }
         
-        const startTime = Date.now();
+        // Store active connection for cancellation
+        const connectionController = {
+            cancelled: false,
+            currentSocket: null
+        };
+        this.activeConnections.set(hostPort, { controller: connectionController, onProgress });
         
-        for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
+        // Handle abort signal
+        if (abortSignal) {
+            if (abortSignal.aborted) {
+                this.activeConnections.delete(hostPort);
+                throw new Error('Connection cancelled before starting');
+            }
+            
+            abortSignal.addEventListener('abort', () => {
+                console.log(`🛑 TLSRequestQueue: [${requestId}] Connection cancelled by user`);
+                connectionController.cancelled = true;
+                if (connectionController.currentSocket) {
+                    this._destroySocket(connectionController.currentSocket, 
+                        connectionController.currentSocket._id || 'unknown', 'user cancellation');
+                }
+                this.activeConnections.delete(hostPort);
+            });
+        }
+        
+        const startTime = Date.now();
+        let attempt = 1;
+        
+        while (isInfinite || attempt <= maxRetries) {
+            // Check for cancellation
+            if (connectionController.cancelled) {
+                const cancelError = new Error('Connection cancelled by user');
+                cancelError.code = 'USER_CANCELLED';
+                throw cancelError;
+            }
+            
             const attemptStartTime = Date.now();
+            this.retryAttempts.set(hostPort, attempt - 1); // 0-based for display
+            
+            // Update progress
+            if (onProgress) {
+                onProgress({
+                    hostPort,
+                    attempt,
+                    maxRetries: isInfinite ? 'infinite' : maxRetries,
+                    phase: 'connecting',
+                    startTime: attemptStartTime
+                });
+            }
+            
             try {
-                console.log(`🔄 TLSRequestQueue: [${requestId}] ====== ATTEMPT ${attempt}/${this.maxRetries} STARTED for ${hostPort} ======`);
+                const displayAttempt = isInfinite ? `${attempt} (∞)` : `${attempt}/${maxRetries}`;
+                console.log(`🔄 TLSRequestQueue: [${requestId}] ====== ATTEMPT ${displayAttempt} STARTED for ${hostPort} ======`);
                 console.log(`🔄 TLSRequestQueue: [${requestId}] Total elapsed time: ${Date.now() - startTime}ms`);
                 
-                const connection = await this._createTLSConnection(host, port, connectOptions, requestId, attempt);
+                const connection = await this._createTLSConnection(host, port, connectOptions, requestId, attempt, connectionController);
                 
                 // Success! Reset retry count and return connection
                 const totalTime = Date.now() - startTime;
                 const attemptTime = Date.now() - attemptStartTime;
                 this.retryAttempts.set(hostPort, 0);
+                this.activeConnections.delete(hostPort);
+                
+                if (onProgress) {
+                    onProgress({
+                        hostPort,
+                        attempt,
+                        maxRetries: isInfinite ? 'infinite' : maxRetries,
+                        phase: 'success',
+                        totalTime,
+                        attemptTime
+                    });
+                }
                 
                 console.log(`✅ TLSRequestQueue: [${requestId}] ====== CONNECTION SUCCESS ======`);
-                console.log(`✅ TLSRequestQueue: [${requestId}] Success on attempt: ${attempt}/${this.maxRetries}`);
+                console.log(`✅ TLSRequestQueue: [${requestId}] Success on attempt: ${displayAttempt}`);
                 console.log(`✅ TLSRequestQueue: [${requestId}] This attempt took: ${attemptTime}ms`);
                 console.log(`✅ TLSRequestQueue: [${requestId}] Total time (including retries): ${totalTime}ms`);
                 console.log(`✅ TLSRequestQueue: [${requestId}] Host: ${hostPort}`);
@@ -58,8 +124,15 @@ class TLSRequestQueue {
                 const attemptTime = Date.now() - attemptStartTime;
                 const totalElapsed = Date.now() - startTime;
                 
+                // Check if this was user cancellation
+                if (error.code === 'USER_CANCELLED' || connectionController.cancelled) {
+                    this.activeConnections.delete(hostPort);
+                    throw error;
+                }
+                
+                const displayAttempt = isInfinite ? `${attempt} (∞)` : `${attempt}/${maxRetries}`;
                 console.log(`❌ TLSRequestQueue: [${requestId}] ====== ATTEMPT ${attempt} FAILED ======`);
-                console.log(`❌ TLSRequestQueue: [${requestId}] Failed attempt: ${attempt}/${this.maxRetries}`);
+                console.log(`❌ TLSRequestQueue: [${requestId}] Failed attempt: ${displayAttempt}`);
                 console.log(`❌ TLSRequestQueue: [${requestId}] This attempt took: ${attemptTime}ms`);
                 console.log(`❌ TLSRequestQueue: [${requestId}] Total elapsed: ${totalElapsed}ms`);
                 console.log(`❌ TLSRequestQueue: [${requestId}] Error: ${error.message}`);
@@ -75,16 +148,29 @@ class TLSRequestQueue {
                     console.log(`🔍 TLSRequestQueue: [${requestId}] Generic error: ${error.message} - will retry`);
                 }
                 
-                // If this was the last attempt, reject with the error
-                if (attempt === this.maxRetries) {
+                // If this was the last attempt (and not infinite), reject with the error
+                if (!isInfinite && attempt >= maxRetries) {
                     const finalTime = Date.now() - startTime;
                     console.error(`💥 TLSRequestQueue: [${requestId}] ====== FINAL FAILURE ======`);
-                    console.error(`💥 TLSRequestQueue: [${requestId}] All ${this.maxRetries} attempts failed for ${hostPort}`);
+                    console.error(`💥 TLSRequestQueue: [${requestId}] All ${maxRetries} attempts failed for ${hostPort}`);
                     console.error(`💥 TLSRequestQueue: [${requestId}] Total time spent: ${finalTime}ms`);
                     console.error(`💥 TLSRequestQueue: [${requestId}] Final error: ${error.message}`);
                     console.error(`💥 TLSRequestQueue: [${requestId}] Final error code: ${error.code || 'UNKNOWN'}`);
                     console.error(`💥 TLSRequestQueue: [${requestId}] ====== GIVING UP ======`);
                     this.retryAttempts.set(hostPort, 0); // Reset for next time
+                    this.activeConnections.delete(hostPort);
+                    
+                    if (onProgress) {
+                        onProgress({
+                            hostPort,
+                            attempt,
+                            maxRetries,
+                            phase: 'failed',
+                            error: error.message,
+                            totalTime: finalTime
+                        });
+                    }
+                    
                     throw error;
                 }
                 
@@ -93,21 +179,44 @@ class TLSRequestQueue {
                 const jitter = Math.random() * 50; // ±25ms jitter
                 const delay = baseDelay + jitter;
                 
+                const nextDisplayAttempt = isInfinite ? `${attempt + 1} (∞)` : `${attempt + 1}/${maxRetries}`;
                 console.log(`⏰ TLSRequestQueue: [${requestId}] ====== PREPARING RETRY ======`);
-                console.log(`⏰ TLSRequestQueue: [${requestId}] Next attempt: ${attempt + 1}/${this.maxRetries}`);
+                console.log(`⏰ TLSRequestQueue: [${requestId}] Next attempt: ${nextDisplayAttempt}`);
                 console.log(`⏰ TLSRequestQueue: [${requestId}] Waiting: ${Math.round(delay)}ms`);
                 console.log(`⏰ TLSRequestQueue: [${requestId}] Backoff calculation: baseDelay=${Math.round(Math.min(this.baseDelay * Math.pow(2, attempt - 1), this.maxDelay))}ms + jitter=${Math.round(jitter)}ms`);
                 
+                if (onProgress) {
+                    onProgress({
+                        hostPort,
+                        attempt,
+                        maxRetries: isInfinite ? 'infinite' : maxRetries,
+                        phase: 'retrying',
+                        error: error.message,
+                        retryDelay: Math.round(delay),
+                        nextAttempt: attempt + 1
+                    });
+                }
+                
                 await this._sleep(delay);
+                
+                // Check for cancellation after sleep
+                if (connectionController.cancelled) {
+                    const cancelError = new Error('Connection cancelled by user');
+                    cancelError.code = 'USER_CANCELLED';
+                    this.activeConnections.delete(hostPort);
+                    throw cancelError;
+                }
                 
                 console.log(`🔄 TLSRequestQueue: [${requestId}] Wait complete, starting next attempt...`);
             }
+            
+            attempt++;
         }
     }
     
     // Remove old queue processing logic - replaced with retry logic above
     
-    async _createTLSConnection(host, port, connectOptions, requestId, attempt) {
+    async _createTLSConnection(host, port, connectOptions, requestId, attempt, connectionController) {
         return new Promise((resolve, reject) => {
             const connectionStartTime = Date.now();
             
@@ -178,11 +287,25 @@ class TLSRequestQueue {
                     resolve(retryConnection);
                 });
                 
+                // Store socket reference for cancellation
+                connectionController.currentSocket = socket;
+                
                 console.log(`🔧 TLSRequestQueue: [${getLogId()}] Socket created successfully`);
                 console.log(`🔧 TLSRequestQueue: [${getLogId()}] Calling TcpSockets.connectTLS...`);
                 console.log(`🔍 TLSRequestQueue: [${getLogId()}] DEBUG - About to call TcpSockets.connectTLS function`);
                 
                 socket.on('connect', () => {
+                    // Check for cancellation
+                    if (connectionController.cancelled) {
+                        if (!isResolved) {
+                            isResolved = true;
+                            const cancelError = new Error('Connection cancelled by user');
+                            cancelError.code = 'USER_CANCELLED';
+                            reject(cancelError);
+                        }
+                        return;
+                    }
+                    
                     tcpConnectTime = Date.now() - connectionStartTime;
                     console.log(`🔧 TLSRequestQueue: [${getLogId()}] === TCP CONNECTION ESTABLISHED ===`);
                     console.log(`🔧 TLSRequestQueue: [${getLogId()}] TCP connected for ${host}:${port} (attempt ${attempt})`);
@@ -276,12 +399,71 @@ class TLSRequestQueue {
     getRetryStatus() {
         const status = {};
         for (const [hostPort, retryCount] of this.retryAttempts.entries()) {
+            const activeConnection = this.activeConnections.get(hostPort);
             status[hostPort] = {
                 currentRetries: retryCount,
-                maxRetries: this.maxRetries
+                maxRetries: this.maxRetries === Infinity ? 'infinite' : this.maxRetries,
+                isActive: !!activeConnection,
+                canCancel: !!activeConnection
             };
         }
         return status;
+    }
+    
+    // Cancel active connection for a specific host:port
+    cancelConnection(host, port) {
+        const hostPort = `${host}:${port}`;
+        const activeConnection = this.activeConnections.get(hostPort);
+        
+        if (activeConnection) {
+            console.log(`🛑 TLSRequestQueue: Cancelling connection to ${hostPort}`);
+            activeConnection.controller.cancelled = true;
+            
+            if (activeConnection.controller.currentSocket) {
+                this._destroySocket(
+                    activeConnection.controller.currentSocket, 
+                    activeConnection.controller.currentSocket._id || 'unknown', 
+                    'user cancellation'
+                );
+            }
+            
+            this.activeConnections.delete(hostPort);
+            this.retryAttempts.set(hostPort, 0); // Reset retry count
+            return true;
+        }
+        
+        console.log(`ℹ️ TLSRequestQueue: No active connection to cancel for ${hostPort}`);
+        return false;
+    }
+    
+    // Cancel all active connections
+    cancelAllConnections() {
+        const cancelledHosts = [];
+        for (const [hostPort, activeConnection] of this.activeConnections.entries()) {
+            console.log(`🛑 TLSRequestQueue: Cancelling connection to ${hostPort}`);
+            activeConnection.controller.cancelled = true;
+            
+            if (activeConnection.controller.currentSocket) {
+                this._destroySocket(
+                    activeConnection.controller.currentSocket, 
+                    activeConnection.controller.currentSocket._id || 'unknown', 
+                    'mass cancellation'
+                );
+            }
+            
+            cancelledHosts.push(hostPort);
+            this.retryAttempts.set(hostPort, 0); // Reset retry count
+        }
+        
+        this.activeConnections.clear();
+        console.log(`🛑 TLSRequestQueue: Cancelled ${cancelledHosts.length} active connections`);
+        return cancelledHosts;
+    }
+    
+    // Check if a connection is currently active
+    isConnectionActive(host, port) {
+        const hostPort = `${host}:${port}`;
+        return this.activeConnections.has(hostPort);
     }
     
     // Reset retry count for a specific host (useful for cleanup)

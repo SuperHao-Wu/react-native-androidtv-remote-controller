@@ -19,10 +19,22 @@ class RemoteManager extends EventEmitter {
         // Initialize TLS retry queue for port 6466 connections
         this.tlsQueue = new TLSRequestQueue();
         
+        // Progress callback for connection attempts
+        this.onProgressCallback = null;
+        this.currentAbortController = null;
+        
         // Heartbeat monitoring for connection health
         this.lastPingReceived = null;
         this.heartbeatInterval = null;
         this.isConnected = false;
+    }
+
+    /**
+     * Set progress callback for connection attempts
+     * @param {Function} callback Function to receive progress updates
+     */
+    setProgressCallback(callback) {
+        this.onProgressCallback = callback;
     }
 
     async start() {
@@ -30,6 +42,9 @@ class RemoteManager extends EventEmitter {
         
         try {
             this.isManualStop = false;
+            
+            // Create new abort controller for this connection attempt
+            this.currentAbortController = new AbortController();
             
             let options = {
                 port: this.port,
@@ -45,8 +60,17 @@ class RemoteManager extends EventEmitter {
             
             console.log(`🔗 RemoteManager: Using TLS retry queue for ${this.host}:${this.port}`);
             
-            // Use TLS retry logic for robust port 6466 connections
-            const connection = await this.tlsQueue.createConnectionWithRetry(this.host, this.port, options);
+            // Use TLS retry logic for robust port 6466 connections with progress tracking
+            const connection = await this.tlsQueue.createConnectionWithRetry(
+                this.host, 
+                this.port, 
+                options,
+                Infinity, // infinite retries for remote connections
+                {
+                    onProgress: this.onProgressCallback,
+                    abortSignal: this.currentAbortController.signal
+                }
+            );
             
             // Extract the underlying socket from PooledTLSConnection
             this.client = connection.socket;
@@ -288,11 +312,31 @@ class RemoteManager extends EventEmitter {
         this.client.write(this.remoteMessageManager.createRemoteRemoteAppLinkLaunchRequest(app_link));
     }
 
+    /**
+     * Cancel ongoing connection attempts (for TLS retry scenarios)
+     */
+    cancelConnection() {
+        console.log(`${this.host} RemoteManager.cancelConnection(): Cancelling TLS retry attempts`);
+        
+        if (this.currentAbortController) {
+            this.currentAbortController.abort();
+            this.currentAbortController = null;
+        }
+        
+        // Cancel any active TLS queue operations
+        if (this.tlsQueue) {
+            this.tlsQueue.cancelConnection(`${this.host}:${this.port}`);
+        }
+    }
+
     stop(){
         console.log(`${this.host} RemoteManager.stop(): Cleaning up connection`);
         
         this.isManualStop = true;
         this.isConnected = false;
+        
+        // Cancel any ongoing connection attempts
+        this.cancelConnection();
         
         // Stop heartbeat monitoring
         this.stopHeartbeatMonitoring();

@@ -487,7 +487,47 @@ NSString *const RCTTCPErrorDomain = @"RCTTCPErrorDomain";
 }
 
 - (void)destroy {
+    NSLog(@"🧹 TcpSocketClient.destroy: Cleaning up TLS resources for client %@", _id);
+    
+    // Clean up client identity reference
+    if (_clientIdentity) {
+        NSLog(@"🧹 TcpSocketClient.destroy: Releasing client identity");
+        CFRelease(_clientIdentity);
+        _clientIdentity = NULL;
+    }
+    
+    // Clean up peer trust reference  
+    if (_peerTrust) {
+        NSLog(@"🧹 TcpSocketClient.destroy: Releasing peer trust");
+        CFRelease(_peerTrust);
+        _peerTrust = NULL;
+    }
+    
+    // Clean up certificates from keychain to avoid conflicts on reconnection
+    NSString *certAlias = _tlsSettings[@"certAlias"] ?: @"clientTlsCert";
+    NSString *keyAlias = _tlsSettings[@"keyAlias"] ?: @"clientTlsKey";
+    
+    if (certAlias) {
+        NSDictionary *deleteCertQuery = @{
+            (__bridge id)kSecClass : (__bridge id)kSecClassCertificate,
+            (__bridge id)kSecAttrLabel: certAlias
+        };
+        OSStatus certStatus = SecItemDelete((__bridge CFDictionaryRef)deleteCertQuery);
+        NSLog(@"🧹 TcpSocketClient.destroy: Removed certificate '%@' from keychain, status: %d", certAlias, (int)certStatus);
+    }
+    
+    if (keyAlias) {
+        NSDictionary *deleteKeyQuery = @{
+            (__bridge id)kSecClass : (__bridge id)kSecClassKey,
+            (__bridge id)kSecAttrLabel: keyAlias
+        };
+        OSStatus keyStatus = SecItemDelete((__bridge CFDictionaryRef)deleteKeyQuery);
+        NSLog(@"🧹 TcpSocketClient.destroy: Removed private key '%@' from keychain, status: %d", keyAlias, (int)keyStatus);
+    }
+    
+    // Finally disconnect the socket
     [_tcpSocket disconnect];
+    NSLog(@"✅ TcpSocketClient.destroy: Cleanup completed for client %@", _id);
 }
 
 - (void)pause {
@@ -763,9 +803,45 @@ typedef NS_ENUM(NSInteger, PEMType) {
     OSStatus status = -1;
     SecIdentityRef identity = NULL;
 
-    // Get aliases from settings
-    NSString *certAlias = settings[@"certAlias"] ?: @"clientTlsCert";
-    NSString *keyAlias = settings[@"keyAlias"] ?: @"clientTlsKey";
+    // Use deterministic aliases to ensure certificate persistence across connections
+    // This is critical for Sony TV which expects the same client certificate identity
+    NSString *baseAlias = settings[@"certAlias"] ?: @"clientTlsCert";
+    NSString *baseKeyAlias = settings[@"keyAlias"] ?: @"clientTlsKey";
+    
+    // Create hash-based suffix from cert+key content for deterministic but unique aliases
+    NSString *contentHash = [NSString stringWithFormat:@"%@%@", pemCert, pemKey];
+    NSUInteger hash = [contentHash hash];
+    NSString *uniqueSuffix = [NSString stringWithFormat:@"_%lx", (unsigned long)hash];
+    
+    NSString *certAlias = [NSString stringWithFormat:@"%@%@", baseAlias, uniqueSuffix];
+    NSString *keyAlias = [NSString stringWithFormat:@"%@%@", baseKeyAlias, uniqueSuffix];
+    
+    NSLog(@"🔐 createIdentity: Using deterministic aliases - cert: '%@', key: '%@'", certAlias, keyAlias);
+
+    // Check if the identity already exists in keychain
+    NSDictionary *existingIdentityQuery = @{
+        (__bridge id)kSecClass : (__bridge id)kSecClassIdentity,
+        (__bridge id)kSecAttrLabel : certAlias,
+        (__bridge id)kSecReturnRef : @YES
+    };
+    
+    CFTypeRef existingIdentityRef = NULL;
+    OSStatus existingStatus = SecItemCopyMatching((__bridge CFDictionaryRef)existingIdentityQuery, &existingIdentityRef);
+    
+    if (existingStatus == errSecSuccess && existingIdentityRef) {
+        NSLog(@"🔄 createIdentity: Reusing existing identity with alias '%@'", certAlias);
+        identity = (SecIdentityRef)existingIdentityRef;
+        
+        // Store the aliases in settings for cleanup later  
+        NSMutableDictionary *mutableSettings = [_tlsSettings mutableCopy] ?: [NSMutableDictionary dictionary];
+        mutableSettings[@"certAlias"] = certAlias;
+        mutableSettings[@"keyAlias"] = keyAlias;
+        _tlsSettings = [mutableSettings copy];
+        
+        return identity;
+    }
+
+    NSLog(@"🔧 createIdentity: Creating new identity - no existing identity found");
 
     NSError *pemError = nil;
     NSData *certData = [self getDataFromPEM:pemCert error:&pemError];
@@ -782,13 +858,15 @@ typedef NS_ENUM(NSInteger, PEMType) {
         RCTLogWarn(@"createIdentity: Failed to create certificate from data");
         return NULL;
     }
-    // Import certificate in keychain
+    
+    // Clean up any existing items with these aliases first
     NSDictionary *deleteCertQuery = @{
         (__bridge id)kSecClass : (__bridge id)kSecClassCertificate,
         (__bridge id)kSecAttrLabel: certAlias,
         (__bridge id)kSecReturnRef : @YES
     };
     status = SecItemDelete((__bridge CFDictionaryRef)deleteCertQuery);
+    NSLog(@"🧹 createIdentity: Cleaned up existing certificate, status: %d", (int)status);
 
     NSDictionary *certAttributes = @{
         //(__bridge id)kSecClass : (__bridge id)kSecClassCertificate,
@@ -802,6 +880,7 @@ typedef NS_ENUM(NSInteger, PEMType) {
         CFRelease(cert);
         return NULL;
     }
+    NSLog(@"✅ createIdentity: Certificate stored successfully with alias '%@'", certAlias);
                                     
     NSDictionary *privateKeyAttributes = @{
         (__bridge id)kSecAttrKeyType : (__bridge id)kSecAttrKeyTypeRSA,
@@ -825,6 +904,7 @@ typedef NS_ENUM(NSInteger, PEMType) {
         (__bridge id)kSecReturnRef : @YES
     };
     status = SecItemDelete((__bridge CFDictionaryRef)deleteKeyQuery);
+    NSLog(@"🧹 createIdentity: Cleaned up existing private key, status: %d", (int)status);
 
     // Add the private key to keychain
     NSDictionary *keyAttributes = @{
@@ -839,6 +919,7 @@ typedef NS_ENUM(NSInteger, PEMType) {
         CFRelease(privateKey);
         return NULL;
     }
+    NSLog(@"✅ createIdentity: Private key stored successfully with alias '%@'", keyAlias);
                                     
     NSDictionary *identityQuery = @{
         (__bridge id)kSecClass : (__bridge id)kSecClassIdentity,
@@ -851,6 +932,14 @@ typedef NS_ENUM(NSInteger, PEMType) {
     if (status != errSecSuccess || !identity) {
         RCTLogWarn(@"createIdentity: Failed to find identity, status: %d",
                    (int)status);
+    } else {
+        NSLog(@"✅ createIdentity: Identity created successfully with alias '%@'", certAlias);
+        
+        // Store the aliases in settings for cleanup later
+        NSMutableDictionary *mutableSettings = [_tlsSettings mutableCopy] ?: [NSMutableDictionary dictionary];
+        mutableSettings[@"certAlias"] = certAlias;
+        mutableSettings[@"keyAlias"] = keyAlias;
+        _tlsSettings = [mutableSettings copy];
     }
     
     // Clean up
