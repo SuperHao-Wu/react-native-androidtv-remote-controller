@@ -1,6 +1,41 @@
 const { startMockTLSServer } = require('../__tests__/MockServer');
 const forge = require('node-forge');
 const crypto = require('crypto');
+const os = require('os');
+
+// Utility function to get the local IP address
+function getLocalIPAddress() {
+  const interfaces = os.networkInterfaces();
+  
+  // Priority order: look for common network interface names
+  const priorityInterfaces = ['en0', 'eth0', 'wlan0', 'Wi-Fi', 'Ethernet'];
+  
+  // First, try priority interfaces
+  for (const interfaceName of priorityInterfaces) {
+    if (interfaces[interfaceName]) {
+      for (const iface of interfaces[interfaceName]) {
+        // Skip internal/loopback addresses and IPv6
+        if (iface.family === 'IPv4' && !iface.internal) {
+          return iface.address;
+        }
+      }
+    }
+  }
+  
+  // Fallback: search all interfaces for first valid IPv4 address
+  for (const interfaceName of Object.keys(interfaces)) {
+    for (const iface of interfaces[interfaceName]) {
+      // Skip internal/loopback addresses and IPv6
+      if (iface.family === 'IPv4' && !iface.internal) {
+        return iface.address;
+      }
+    }
+  }
+  
+  // Final fallback to localhost if no network interface found
+  console.warn('⚠️  Could not determine local IP address, using localhost');
+  return '127.0.0.1';
+}
 
 // Helper function to extract modulus and exponent from certificate (like client-side)
 function getCertificateModulusExponent(certPem) {
@@ -266,7 +301,8 @@ class MockServerManager {
       });
 
       this.isRunning = true;
-      console.log('✅ Mock Sony TV servers running on 192.168.2.150:6467 (pairing) and 192.168.2.150:6466 (remote)');
+      const localIP = getLocalIPAddress();
+      console.log(`✅ Mock Sony TV servers running on ${localIP}:6467 (pairing) and ${localIP}:6466 (remote)`);
       
     } catch (error) {
       console.error('❌ Failed to start mock servers:', error);
@@ -547,7 +583,7 @@ function startStatusServer(serverManager, port = 3001) {
     } else if (req.url === '/generate-test-certificate' && req.method === 'POST') {
       // Generate a test client certificate for E2E testing
       try {
-        const host = req.headers['x-test-host'] || '192.168.2.150';
+        const host = req.headers['x-test-host'] || getLocalIPAddress();
         console.log(`🧪 Mock Server: Generating test certificate for E2E testing (host: ${host})`);
         
         // Generate test client certificate 
