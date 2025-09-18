@@ -37,19 +37,53 @@ function getLocalIPAddress() {
   return '127.0.0.1';
 }
 
-// Helper function to extract modulus and exponent from certificate (like client-side)
-function getCertificateModulusExponent(certPem) {
+// Helper: base64url decode to Buffer
+function base64urlToBuffer(b64url) {
+  // Replace URL-safe chars and pad to length multiple of 4
+  const b64 = b64url.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(b64url.length / 4) * 4, '=');
+  return Buffer.from(b64, 'base64');
+}
+
+// Helper: extract key material from certificate for PIN hashing (supports RSA and EC)
+function getCertificateKeyMaterial(certPem) {
   try {
-    const cert = forge.pki.certificateFromPem(certPem);
-    const publicKey = cert.publicKey;
-    
-    // Extract modulus and exponent as hex strings
-    const modulus = publicKey.n.toString(16).toUpperCase();
-    const exponent = publicKey.e.toString(16).toUpperCase();
-    
-    return { modulus, exponent };
-  } catch (error) {
-    console.error('Error extracting certificate details:', error);
+    // Prefer Node crypto for broad key support (RSA, EC)
+    const x509 = new crypto.X509Certificate(certPem);
+    const keyObj = x509.publicKey;
+    const type = keyObj.asymmetricKeyType; // 'rsa' | 'ec' | etc
+
+    if (type === 'rsa') {
+      // Export as JWK to get modulus/exponent
+      const jwk = keyObj.export({ format: 'jwk' });
+      const nHex = base64urlToBuffer(jwk.n).toString('hex').toUpperCase();
+      const eHex = base64urlToBuffer(jwk.e).toString('hex').toUpperCase();
+      return { type: 'rsa', modulus: nHex, exponent: eHex };
+    }
+
+    if (type === 'ec') {
+      // Export as JWK to get x/y coordinates (uncompressed)
+      const jwk = keyObj.export({ format: 'jwk' });
+      const xHex = base64urlToBuffer(jwk.x).toString('hex').toUpperCase();
+      const yHex = base64urlToBuffer(jwk.y).toString('hex').toUpperCase();
+      return { type: 'ec', x: xHex, y: yHex, crv: jwk.crv };
+    }
+
+    // Fallback: use SPKI bytes if type unknown
+    const spkiDer = keyObj.export({ type: 'spki', format: 'der' });
+    return { type: 'unknown', spki: Buffer.from(spkiDer).toString('hex').toUpperCase() };
+  } catch (err) {
+    // Final fallback to forge (works for RSA)
+    try {
+      const cert = forge.pki.certificateFromPem(certPem);
+      if (cert.publicKey && cert.publicKey.n && cert.publicKey.e) {
+        const modulus = cert.publicKey.n.toString(16).toUpperCase();
+        const exponent = cert.publicKey.e.toString(16).toUpperCase();
+        return { type: 'rsa', modulus, exponent };
+      }
+    } catch (e2) {
+      // ignore
+    }
+    console.error('Error extracting certificate key material:', err.message);
     return null;
   }
 }
@@ -61,8 +95,8 @@ function generateValidPin(clientCert, serverCert) {
     const pinData = Math.floor(Math.random() * 0xFFFF).toString(16).toUpperCase().padStart(4, '0');
     
     // Extract certificate details
-    const clientDetails = getCertificateModulusExponent(clientCert);
-    const serverDetails = getCertificateModulusExponent(serverCert);
+    const clientDetails = getCertificateKeyMaterial(clientCert);
+    const serverDetails = getCertificateKeyMaterial(serverCert);
     
     if (!clientDetails || !serverDetails) {
       throw new Error('Could not extract certificate details');
@@ -70,10 +104,26 @@ function generateValidPin(clientCert, serverCert) {
     
     // Create SHA256 hash exactly like client-side validation does
     const sha256 = forge.md.sha256.create();
-    sha256.update(forge.util.hexToBytes(clientDetails.modulus), 'raw');
-    sha256.update(forge.util.hexToBytes(clientDetails.exponent), 'raw');
-    sha256.update(forge.util.hexToBytes(serverDetails.modulus), 'raw');
-    sha256.update(forge.util.hexToBytes(serverDetails.exponent), 'raw');
+    // Client key material
+    if (clientDetails.type === 'rsa') {
+      sha256.update(forge.util.hexToBytes(clientDetails.modulus), 'raw');
+      sha256.update(forge.util.hexToBytes(clientDetails.exponent), 'raw');
+    } else if (clientDetails.type === 'ec') {
+      sha256.update(forge.util.hexToBytes(clientDetails.x), 'raw');
+      sha256.update(forge.util.hexToBytes(clientDetails.y), 'raw');
+    } else if (clientDetails.spki) {
+      sha256.update(forge.util.hexToBytes(clientDetails.spki), 'raw');
+    }
+    // Server key material
+    if (serverDetails.type === 'rsa') {
+      sha256.update(forge.util.hexToBytes(serverDetails.modulus), 'raw');
+      sha256.update(forge.util.hexToBytes(serverDetails.exponent), 'raw');
+    } else if (serverDetails.type === 'ec') {
+      sha256.update(forge.util.hexToBytes(serverDetails.x), 'raw');
+      sha256.update(forge.util.hexToBytes(serverDetails.y), 'raw');
+    } else if (serverDetails.spki) {
+      sha256.update(forge.util.hexToBytes(serverDetails.spki), 'raw');
+    }
     sha256.update(forge.util.hexToBytes(pinData), 'raw');
     
     const hash = sha256.digest().getBytes();
@@ -238,21 +288,35 @@ class MockServerManager {
           setTimeout(() => {
             try {
               console.log(`🔍 [6467] ${getLocalTimestamp()} Attempting certificate extraction...`);
-              
+
               const clientCert = socket.getPeerCertificate(true);
               const serverCert = socket.getCertificate();
-              
+
+              const clientHasRaw = !!(clientCert && clientCert.raw);
+              const serverHasRaw = !!(serverCert && serverCert.raw);
+
               console.log(`🔍 [6467] ${getLocalTimestamp()} Certificate extraction - client cert exists:`, !!clientCert);
               console.log(`🔍 [6467] ${getLocalTimestamp()} Certificate extraction - server cert exists:`, !!serverCert);
-              console.log(`🔍 [6467] ${getLocalTimestamp()} Certificate extraction - client has raw:`, !!clientCert?.raw);
-              console.log(`🔍 [6467] ${getLocalTimestamp()} Certificate extraction - server has raw:`, !!serverCert?.raw);
-              
-              if (clientCert && clientCert.raw && serverCert && serverCert.raw) {
-                // Convert DER to PEM format
-                this.clientCertificate = forge.pki.certificateToPem(forge.pki.certificateFromAsn1(forge.asn1.fromDer(clientCert.raw.toString('binary'))));
-                this.serverCertificate = forge.pki.certificateToPem(forge.pki.certificateFromAsn1(forge.asn1.fromDer(serverCert.raw.toString('binary'))));
-                
-                console.log(`📜 [6467] ${getLocalTimestamp()} Real certificates extracted successfully for PIN generation`);
+              console.log(`🔍 [6467] ${getLocalTimestamp()} Certificate extraction - client has raw:`, clientHasRaw);
+              console.log(`🔍 [6467] ${getLocalTimestamp()} Certificate extraction - server has raw:`, serverHasRaw);
+
+              if (clientHasRaw && serverHasRaw) {
+                // Convert raw DER to PEM without assuming key type
+                const toPem = (rawBuf) => {
+                  const b64 = Buffer.from(rawBuf).toString('base64');
+                  const lines = b64.match(/.{1,64}/g) || [];
+                  return `-----BEGIN CERTIFICATE-----\n${lines.join('\n')}\n-----END CERTIFICATE-----\n`;
+                };
+
+                this.clientCertificate = toPem(clientCert.raw);
+                this.serverCertificate = toPem(serverCert.raw);
+
+                // Log key types for visibility
+                try {
+                  const cType = new crypto.X509Certificate(this.clientCertificate).publicKey.asymmetricKeyType;
+                  const sType = new crypto.X509Certificate(this.serverCertificate).publicKey.asymmetricKeyType;
+                  console.log(`📜 [6467] ${getLocalTimestamp()} Certificates extracted. Client key: ${cType}, Server key: ${sType}`);
+                } catch (_) {}
               } else {
                 console.log(`⚠️  [6467] ${getLocalTimestamp()} Could not extract certificates - will use test certificates`);
                 console.log(`     Client cert:`, clientCert ? Object.keys(clientCert) : 'null');
@@ -287,9 +351,20 @@ class MockServerManager {
         enablePairingFlow: false,
         onConnect: (socket) => {
           console.log(`🖥️  [6466] ${getLocalTimestamp()} Remote server: Connection from`, socket.remoteAddress);
+          
+          // Set up 5-second disconnect timer for reconnect testing
+          const disconnectTimer = setTimeout(() => {
+            console.log(`⏰ [6466] ${getLocalTimestamp()} Auto-disconnecting remote connection after 5 seconds for reconnect testing`);
+            if (!socket.destroyed) {
+              socket.destroy();
+            }
+          }, 5000);
+          
+          // Store timer reference on socket for cleanup if connection closes early
+          socket.disconnectTimer = disconnectTimer;
         },
         onSecureConnect: (socket) => {
-          console.log(`🔐 [6466] ${getLocalTimestamp()} Remote server: Secure connection established`);
+          console.log(`🔐 [6466] ${getLocalTimestamp()} Remote server: Secure connection established - will disconnect in 5 seconds`);
         },
         onData: (socket, data) => {
           console.log(`📨 [6466] ${getLocalTimestamp()} Remote server: Received`, data.length, 'bytes');
@@ -297,6 +372,11 @@ class MockServerManager {
         },
         onClose: (socket) => {
           console.log(`🚪 [6466] ${getLocalTimestamp()} Remote server: Connection closed`);
+          
+          // Clear the disconnect timer if connection closes naturally
+          if (socket.disconnectTimer) {
+            clearTimeout(socket.disconnectTimer);
+          }
         }
       });
 
